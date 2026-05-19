@@ -2,16 +2,18 @@
 
 Read this file before running commands.
 
-This project implements a Personality Intelligence Layer (PIL): a persistent, inspectable, growing personality state for AI agents.
+This project implements PDK, the Personality Drive Kernel: a persistent, inspectable, growing personality-driven kernel layer for AI agents.
+
+Some runtime files still use the earlier `PIL_*` names for compatibility. Treat those files as PDK backup/protocol files.
 
 The project is not a long-context store and not a role-play prompt. Each agent must have its own durable profile.
 
 ## Work Directory
 
-Run commands from the repository or deployed PIL folder:
+Run commands from the repository or deployed PDK folder:
 
 ```text
-<PIL_ROOT>
+<PDK_ROOT>
 ```
 
 Do not search the entire machine. Do not use old drop-in files from backups. Do not infer paths from another user's local machine.

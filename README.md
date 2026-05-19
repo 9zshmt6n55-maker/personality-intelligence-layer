@@ -1,45 +1,74 @@
-# Personality Intelligence Layer
+# Personality Drive Kernel
 
-Personality Intelligence Layer, or PIL, is an experimental system for giving each AI agent a persistent, growable behavior layer.
+**Personality Drive Kernel (PDK)** is a growable personality-driven kernel layer for AI agents.
 
-The goal is not to save every conversation forever. The goal is to let experience change the agent.
+It is built around a simple observation:
 
 ```text
-Raw context can be forgotten.
-The shaped personality layer should remain.
+Humans forget details, but they retain shaped behavior.
 ```
 
-PIL turns interactions, corrections, tasks, and long-term use into an inspectable profile state. That state can guide later behavior even when the original chat context is gone.
+A person may forget many past events, yet still knows how to respond when a similar situation appears. The experience has not disappeared. It has been compressed into personality, judgment, boundaries, habits, and risk posture.
+
+PDK applies the same idea to AI agents. Instead of relying on long context forever, it distills interaction history into a persistent layer that guides decisions, communication style, risk handling, behavioral consistency, and future growth.
 
 中文说明见 [README.zh-CN.md](README.zh-CN.md).
 
+> Note: some files still use the earlier `PIL_*` naming for compatibility. The public concept name is now **PDK: Personality Drive Kernel**.
+
 ## Why This Exists
 
-Most agent systems depend on one of three things:
+Most AI agent systems depend on one of three mechanisms:
 
 - long context windows
-- memory files full of old facts
+- memory files full of past facts
 - static role prompts
 
-Those are useful, but they are not the same as a stable agent identity. A real long-term agent needs a smaller durable layer that can survive context loss, migrate between sessions, and keep its working style consistent without replaying the whole past.
+Those mechanisms are useful, but they are not the same as a durable behavioral core.
 
-PIL is designed around that layer.
+Long context tries to keep the past alive by carrying more text. PDK takes another path: it treats past experience as material that should reshape the agent. After an interaction updates the kernel, the raw detail can often be forgotten.
+
+The goal is not:
+
+```text
+Remember everything that happened.
+```
+
+The goal is:
+
+```text
+Become the kind of agent that knows how to act when something similar happens again.
+```
+
+## Theoretical Grounding
+
+PDK is inspired by modern personality psychology and cognitive science, especially:
+
+- **Big Five / Five-Factor Model**: personality can be described through broad trait dimensions such as openness, conscientiousness, extraversion, agreeableness, and neuroticism.
+- **HEXACO**: adds honesty-humility and offers another trait structure for social behavior, restraint, and cooperation.
+- **Temperament and character theories**: distinguish more stable response tendencies from learned values and self-regulation.
+- **CAPS, the Cognitive-Affective Personality System**: behavior is shaped by situation-sensitive patterns, not only fixed traits.
+- **Appraisal theories of emotion**: emotional response can be modeled as evaluations of novelty, risk, goal relevance, control, and social meaning.
+- **Decision and control theory**: action can be viewed as the result of competing forces, constraints, priorities, and feedback.
+
+PDK does not claim to perfectly reproduce human personality. It uses these theories as design scaffolding for an agent kernel: traits, drives, values, emotional baselines, risk sensitivity, boundaries, relationship models, situation prototypes, and correction rules.
 
 ## What Makes It Different
 
-PIL is not a chatbot prompt. It is not a folder of memories. It is a profile system that separates raw experience from shaped behavioral state.
+PDK is not a chatbot prompt. It is not a folder of memories. It is not a role-play card.
+
+It is a profile system that separates raw experience from shaped behavioral state.
 
 Core advantages:
 
-- **Context-light continuity**: old conversations can be distilled into traits, motives, habits, risk posture, correction rules, and decision preferences instead of being pasted back forever.
+- **Context-light continuity**: old conversations can be distilled into behavior-shaping state instead of being pasted back forever.
+- **Personality-driven decisions**: the kernel participates in how the agent judges, speaks, refuses, verifies, takes risks, and acts.
 - **Agent identity as a profile**: each agent lives in `agents/<profile>/`, so multiple agents can run side by side without overwriting each other.
 - **Old-agent migration**: a mature agent can generate `PIL_PERSONALITY_BACKUP.md`, then a new session can restore that backup into a working profile.
 - **Visible personality state**: the desktop orb and observatory show growth, domains, activity, and changes instead of hiding the model in a black box.
-- **Behavior arbitration**: decisions are influenced by multiple competing signals such as caution, directness, trust, autonomy, curiosity, boundaries, and risk sensitivity.
-- **Forgetting is intentional**: PIL treats forgetting raw details as a feature. The state should preserve behavioral lessons, not hoard every transcript.
-- **Works as protocol or runtime**: if the local Python runtime is available, PIL can write state and show the orb. If not, the Markdown protocol still tells an agent how to restore, back up, and act.
-
-This is early-stage research software, but the architecture is clear: persistent personality state, profile isolation, visible growth, and migration across sessions.
+- **Behavior arbitration**: decisions are influenced by competing signals such as caution, directness, trust, autonomy, curiosity, boundaries, and risk sensitivity.
+- **Forgetting is intentional**: PDK treats forgetting raw details as a feature. The state should preserve behavioral lessons, not hoard every transcript.
+- **Protocol plus runtime**: if the local Python runtime is available, PDK can write state and show the orb. If not, the Markdown protocol still tells an agent how to restore, back up, and act.
 
 ## What This Repository Contains
 
@@ -57,7 +86,7 @@ This is early-stage research software, but the architecture is clear: persistent
 Run commands from the project folder:
 
 ```powershell
-cd <PIL_ROOT>
+cd <PDK_ROOT>
 ```
 
 Install Python 3 if needed, then create a new profile:
@@ -98,7 +127,9 @@ python .\pil_profiles.py open-all
 
 ## Restoring An Old Agent
 
-Old agents should not write a short self-description. They should produce a structured backup:
+Old agents should not write a short self-description. That is too weak to restore behavior.
+
+They should produce a structured backup:
 
 ```text
 PIL_PERSONALITY_BACKUP.md

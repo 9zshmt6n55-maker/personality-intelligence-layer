@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Secrets and local config
+.env
+.env.*
+*.local
+
+# Runtime personality data: private by default
+agents/*
+!agents/.gitkeep
+state/*.json
+public/pkm_visible.json
+PIL_PERSONALITY_BACKUP.md
+imports/feishu/raw/
+imports/feishu/processed/
+imports/feishu/reports/
+backups/
+
+# Generated previews, screenshots, and logs
+*.png
+pkm-*.json
+NEW_CODEX_TEST.md
+copy_new_codex_test.cmd
+*.webp
+*.jpg
+*.jpeg
+*.gif
+*.log
+server.out.log
+server.err.log
+
+# OS/editor
+Thumbs.db
+.DS_Store
+.vscode/
+.idea/

@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PKM Personality Body</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <aside class="identity-pane">
+        <div class="system-mark">PKM / VISIBLE BODY</div>
+        <h1 id="agentName">Kernel</h1>
+        <p id="agentType" class="agent-type">forming kernel</p>
+
+        <dl class="kernel-facts">
+          <div>
+            <dt>Stage</dt>
+            <dd id="stage">embryo</dd>
+          </div>
+          <div>
+            <dt>Interactions</dt>
+            <dd id="count">0</dd>
+          </div>
+          <div>
+            <dt>Prototypes</dt>
+            <dd id="protoCount">0</dd>
+          </div>
+        </dl>
+
+        <section class="thesis">
+          <span>Model Thesis</span>
+          <p>Experience deforms the agent. Raw context is compressed.</p>
+        </section>
+
+        <section class="material-map">
+          <span>Body Layers</span>
+          <div><i style="--c:#d6c8a5"></i> core values</div>
+          <div><i style="--c:#6f92a8"></i> affective layer</div>
+          <div><i style="--c:#6d877f"></i> behavior field</div>
+          <div><i style="--c:#87666a"></i> boundary shell</div>
+        </section>
+      </aside>
+
+      <section class="observatory">
+        <header class="observatory-header">
+          <div>
+            <span class="system-mark">Personality Morphology</span>
+            <h2>人格体</h2>
+          </div>
+          <div class="header-tools">
+            <div class="orbit-note">drag rotate / wheel zoom</div>
+            <div class="view-controls" aria-label="label display">
+              <button type="button" class="active" data-label-mode="hover">Hover</button>
+              <button type="button" data-label-mode="all">All</button>
+              <button type="button" data-label-mode="off">Off</button>
+            </div>
+            <button type="button" class="path-toggle" data-path-toggle>Growth path off</button>
+          </div>
+        </header>
+
+        <div id="canvasMount" class="canvas-mount"></div>
+        <div id="labelLayer" class="label-layer"></div>
+
+        <footer class="growth-strip">
+          <div>
+            <span>Latest deformation</span>
+            <strong id="growthHeadline">waiting for growth signal</strong>
+          </div>
+          <div id="timeline" class="timeline"></div>
+        </footer>
+      </section>
+
+      <aside class="inspector-pane">
+        <section class="inspector-section">
+          <div class="section-title">Current Surface</div>
+          <div id="anchorList" class="anchor-list"></div>
+        </section>
+
+        <section class="inspector-section">
+          <div class="section-title">Growth Cause</div>
+          <div id="growth" class="growth-copy">
+            <p class="muted">No growth trace yet.</p>
+          </div>
+        </section>
+      </aside>
+    </main>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

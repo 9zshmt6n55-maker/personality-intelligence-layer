@@ -113,6 +113,19 @@ Ask the profile for a behavioral decision:
 python .\pkm_runtime.py decide --profile test-agent "The user asks for a fast but risky shortcut."
 ```
 
+The `decide` command is the pre-answer gate. It now returns:
+
+- `decision`: the winning behavioral posture and competing alternatives.
+- `action_contract`: the response contract the agent should follow before answering, including active domains, answer shape, and what to avoid.
+- `orb_runtime`: transient decision activation written into `pkm_visible.json`, so the orb can react to the current task instead of only showing past growth.
+- `llm_directive`: a compact instruction block for the model.
+
+A correct PDK agent loop is:
+
+```text
+current task -> decide -> answer from action_contract -> settle outcome -> personality grows
+```
+
 List all profiles:
 
 ```powershell

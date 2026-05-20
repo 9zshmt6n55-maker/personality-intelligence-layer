@@ -129,6 +129,7 @@ def run_decide(text: str, profile: str = "") -> int:
     try:
         mode, path, visible, _, state = load_runtime_state(profile)
         result = pkm.decide(state, text)
+        pkm.export_visible(state, visible, runtime=result.get("orb_runtime"))
         result["runtime"] = {"profile": profile or "default", "mode": mode, "state": str(path), "visible": str(visible)}
         print_json(result)
     finally:

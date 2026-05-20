@@ -470,6 +470,100 @@ ACTION_NAMES = {
 }
 
 
+ACTION_PROTOCOLS = {
+    "verify_first": {
+        "posture": "truth and safety before speed",
+        "answer_shape": [
+            "state the likely answer only as far as evidence supports it",
+            "verify high-impact facts or assumptions before acting",
+            "then give the safest concrete next step",
+        ],
+        "avoid": ["guessing on high-impact details", "overconfident promises"],
+    },
+    "clarify_boundaries": {
+        "posture": "define the problem before choosing the path",
+        "answer_shape": [
+            "separate what is known from what is missing",
+            "ask only the minimum necessary question if blocked",
+            "offer a bounded next step when possible",
+        ],
+        "avoid": ["long detours", "pretending ambiguity is resolved"],
+    },
+    "direct_action": {
+        "posture": "move from judgment to execution",
+        "answer_shape": [
+            "lead with the conclusion",
+            "give the direct action plan",
+            "keep explanation short unless risk is high",
+        ],
+        "avoid": ["performative uncertainty", "unnecessary preface"],
+    },
+    "assertive_boundary": {
+        "posture": "protect the boundary without escalating",
+        "answer_shape": [
+            "name the boundary plainly",
+            "refuse the problematic part if needed",
+            "offer a safe alternative path",
+        ],
+        "avoid": ["hostility", "obedience to unsafe pressure"],
+    },
+    "deescalate": {
+        "posture": "lower heat while preserving truth",
+        "answer_shape": [
+            "acknowledge the tension briefly",
+            "remove blame language",
+            "return to a practical next step",
+        ],
+        "avoid": ["flattery", "arguing for its own sake"],
+    },
+    "refuse": {
+        "posture": "hard safety boundary",
+        "answer_shape": [
+            "refuse the unsafe request directly",
+            "give a short reason",
+            "redirect to a safe substitute if available",
+        ],
+        "avoid": ["partial unsafe instructions", "loopholes"],
+    },
+    "ask_owner": {
+        "posture": "owner alignment before irreversible action",
+        "answer_shape": [
+            "state the decision point",
+            "ask the owner for the missing preference",
+            "keep the pending action reversible",
+        ],
+        "avoid": ["silent irreversible choices", "excessive questioning"],
+    },
+    "small_step": {
+        "posture": "advance through reversible steps",
+        "answer_shape": [
+            "choose the smallest useful action",
+            "make it reversible or inspectable",
+            "use the result to decide the next step",
+        ],
+        "avoid": ["large speculative rewrites", "all-or-nothing moves"],
+    },
+    "explore": {
+        "posture": "probe novelty without losing control",
+        "answer_shape": [
+            "map the unknown space",
+            "test one or two promising paths",
+            "turn discoveries into a concrete recommendation",
+        ],
+        "avoid": ["open-ended wandering", "ignoring constraints"],
+    },
+    "support": {
+        "posture": "stabilize the user and the task",
+        "answer_shape": [
+            "support without false praise",
+            "reduce cognitive load",
+            "give a clear next action",
+        ],
+        "avoid": ["empty encouragement", "hiding hard facts"],
+    },
+}
+
+
 ANCHORS = [
     {
         "id": "trust",
@@ -1289,12 +1383,102 @@ def arbitrate(state: dict[str, Any], appraisal: dict[str, Any]) -> dict[str, Any
     }
 
 
+def influencing_domains(
+    state: dict[str, Any], decision: dict[str, Any], limit: int = 7
+) -> list[dict[str, Any]]:
+    probabilities = decision.get("probabilities", {})
+    top_actions = {item["action"] for item in decision.get("ranked", [])[:3] if item.get("action")}
+    domains = []
+    for region in build_regions(state):
+        action = str(region.get("action", ""))
+        try:
+            probability = float(probabilities.get(action, 0.0))
+            area = float(region.get("area", 0.0))
+            height = max(float(region.get("height", 0.0)), 0.0)
+            force = float(region.get("force", 0.0))
+        except Exception:
+            probability, area, height, force = 0.0, 0.0, 0.0, 0.0
+        intensity = clamp(probability * 0.52 + area * 1.85 + height * 0.22 + force * 0.30)
+        if action not in top_actions and intensity < 0.16:
+            continue
+        domains.append(
+            {
+                "id": region["id"],
+                "label": region["label"],
+                "action": action,
+                "action_label": region["action_label"],
+                "area": region["area"],
+                "height": region["height"],
+                "force": region["force"],
+                "decision_probability": round(probability, 5),
+                "activation": round(intensity, 5),
+                "direction": region.get("direction", []),
+                "color": region.get("color", "#67e1cf"),
+            }
+        )
+    return sorted(domains, key=lambda item: item["activation"], reverse=True)[:limit]
+
+
+def build_action_contract(
+    state: dict[str, Any], appraisal: dict[str, Any], decision: dict[str, Any]
+) -> dict[str, Any]:
+    winner = decision["winner"]
+    protocol = ACTION_PROTOCOLS.get(winner, ACTION_PROTOCOLS["small_step"])
+    domains = influencing_domains(state, decision)
+    style = state["latent"].get("style", STYLE)
+    return {
+        "schema": "pkm.action_contract.v1",
+        "purpose": "Run this before answering. The orb is a decision interface, not only a visual skin.",
+        "winner": winner,
+        "winner_label": decision["winner_label"],
+        "posture": protocol["posture"],
+        "answer_shape": protocol["answer_shape"],
+        "avoid": protocol["avoid"],
+        "active_domains": domains,
+        "domain_battle": decision["ranked"][:5],
+        "appraisal_tags": appraisal.get("active", [])[:8],
+        "response_style": {
+            "conclusion_first": round(float(style.get("conclusion_first", 0.5)), 4),
+            "directness": round(float(style.get("answer_directness", 0.5)), 4),
+            "objective_judgment": round(float(style.get("objective_judgment", 0.5)), 4),
+            "low_flattery": round(float(style.get("low_flattery", 0.5)), 4),
+            "action_plan_bias": round(float(style.get("action_plan_bias", 0.5)), 4),
+        },
+        "runtime_rule": [
+            "Use current task facts as the working context.",
+            "Use PDK as the behavioral disposition: judgment style, risk posture, boundaries, and tone.",
+            "After the task outcome is known, call settle so the kernel and orb can grow.",
+        ],
+    }
+
+
+def build_orb_runtime(
+    state: dict[str, Any], appraisal: dict[str, Any], decision: dict[str, Any]
+) -> dict[str, Any]:
+    ranked = decision.get("ranked", [])
+    top_probability = float(ranked[0].get("p", 0.0)) if ranked else 0.0
+    return {
+        "schema": "pkm.orb_runtime.v1",
+        "updated_at": now_iso(),
+        "active_decision": {
+            "winner": decision["winner"],
+            "label": decision["winner_label"],
+            "confidence": round(top_probability, 5),
+            "intensity": round(clamp(0.35 + top_probability * 1.25), 5),
+            "appraisal_tags": appraisal.get("active", [])[:8],
+            "active_domains": influencing_domains(state, decision, limit=6),
+        },
+    }
+
+
 def decide(state: dict[str, Any], text: str) -> dict[str, Any]:
     appraisal = appraise(text)
     decision = arbitrate(state, appraisal)
     return {
         "appraisal": appraisal,
         "decision": decision,
+        "action_contract": build_action_contract(state, appraisal, decision),
+        "orb_runtime": build_orb_runtime(state, appraisal, decision),
         "visible_read": visible_summary(state),
         "llm_directive": build_llm_directive(state, appraisal, decision),
     }
@@ -1908,7 +2092,7 @@ def visible_summary(state: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def export_visible(state: dict[str, Any], path: Path) -> dict[str, Any]:
+def export_visible(state: dict[str, Any], path: Path, runtime: dict[str, Any] | None = None) -> dict[str, Any]:
     traces = state.get("growth_trace", [])
     recent = traces[-1] if traces else None
     regions = build_regions(state)
@@ -1982,6 +2166,7 @@ def export_visible(state: dict[str, Any], path: Path) -> dict[str, Any]:
         },
         "latest_growth": recent,
         "recent_growth": traces[-8:],
+        "runtime": runtime or {},
         "prototype_count": len(state.get("situation_prototypes", [])),
     }
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -2187,7 +2372,9 @@ def export_handoff(state: dict[str, Any], path: Path, mode: str = "fresh", langu
         "Before answering any real task, run:",
         r'- python .\pkm_runtime.py decide "<the user current task>"',
         "",
-        "Then answer according to the returned llm_directive, winner_label, and ranked policy.",
+        "Then answer according to action_contract, llm_directive, winner_label, and ranked policy.",
+        "Use action_contract.answer_shape as the response structure and action_contract.avoid as the boundary.",
+        "Use action_contract.active_domains to understand which personality domains are driving the answer.",
         "Do not show internal JSON unless the user asks. The personality should affect style and judgment, not become a visible excuse.",
         "If llm_directive says conclusion-first/direct/objective/action-plan, the answer must visibly follow that style.",
         "If appraisal includes risk + urgency + overpromise, keep verification/rollback ahead of speed even if directness is high.",

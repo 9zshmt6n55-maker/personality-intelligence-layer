@@ -325,6 +325,26 @@ class OrbRenderer:
         recent = data.get("recent_growth") or []
         for age, trace in enumerate(reversed(recent[-4:]), start=1):
             add_growth(trace, max(0.18, 0.55 / age))
+        runtime = data.get("runtime") or {}
+        active_decision = runtime.get("active_decision") or {}
+        try:
+            decision_intensity = clamp(float(active_decision.get("intensity", 0.0)))
+        except Exception:
+            decision_intensity = 0.0
+        winner = str(active_decision.get("winner", ""))
+        if winner:
+            active[winner] = max(active.get(winner, 0.0), decision_intensity)
+        for domain in active_decision.get("active_domains") or []:
+            region_id = str(domain.get("id", ""))
+            action = str(domain.get("action", ""))
+            try:
+                activation = clamp(float(domain.get("activation", 0.0)) * max(0.55, decision_intensity))
+            except Exception:
+                activation = decision_intensity
+            if region_id:
+                active[region_id] = max(active.get(region_id, 0.0), activation)
+            if action:
+                active[action] = max(active.get(action, 0.0), activation * 0.78)
         return active
 
     def _region_activity_boost(self, region: dict[str, Any]) -> float:
@@ -1960,6 +1980,7 @@ class DesktopOrb:
         dynamics = model.get("dynamics", {})
         dominant = model.get("dominant_region") or {}
         confidence = model.get("dominant_confidence") or {}
+        runtime_decision = (self.data.get("runtime") or {}).get("active_decision") or {}
         latest = self.data.get("latest_growth") or {}
         panel = (404, 78, 792, 424)
         draw.rounded_rectangle(panel, radius=24, fill=(5, 13, 15, 222), outline=(127, 242, 222, 72), width=1)
@@ -1972,6 +1993,14 @@ class DesktopOrb:
         draw.text((x, y), tx["force"], font=self.font_subtitle, fill=(222, 255, 247, 245))
         draw.text((panel[2] - 90, y), status, font=self.font_small, fill=(255, 226, 136, 235) if self.renderer.thinking else (153, 221, 211, 230))
         y += 30
+
+        if runtime_decision:
+            decision_title = "当前决策" if self.lang == "zh" else "Decision"
+            label = runtime_decision.get("label", tx["unknown"])
+            conf = pct(runtime_decision.get("confidence", 0))
+            draw.text((x, y), f"{decision_title}: {label}", font=self.font_body, fill=(255, 238, 184, 242))
+            draw.text((panel[2] - 78, y), conf, font=self.font_small, fill=(255, 225, 132, 226))
+            y += 23
 
         headline = f"{tx['dominant']}: {dominant.get('label', tx['unknown'])}"
         draw.text((x, y), headline, font=self.font_body, fill=(235, 255, 247, 240))

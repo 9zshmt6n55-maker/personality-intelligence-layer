@@ -91,6 +91,30 @@ python .\pkm_runtime.py boot --profile <profile> --mode continue --compact
 python .\pkm_runtime.py teach --profile <profile> "用户教学或纠偏"
 ```
 
+回答重要任务前，先让人格驱动内核层参与决策：
+
+```powershell
+python .\pkm_runtime.py decide --profile <profile> "当前用户任务"
+```
+
+你必须读取返回结果里的：
+
+- `action_contract.winner_label`
+- `action_contract.answer_shape`
+- `action_contract.avoid`
+- `action_contract.active_domains`
+- `llm_directive`
+
+然后再回答用户。不要把 JSON 原样贴给用户，除非用户要求。人格层应该影响判断、语气、风险处理、边界和行动风格。
+
+任务有结果后，用 `settle` 写回成长：
+
+```powershell
+python .\pkm_runtime.py settle --profile <profile> "同一个任务" --outcome success --note "简短结果"
+```
+
+如果结果一般或失败，把 `success` 换成 `mixed` 或 `failure`。这一步会让人格球继续变化。
+
 这样多个代理的人格球可以同时存在。启动或恢复一个 profile，只能替换同一个 profile 的旧窗口，不能关闭其他代理的人格球。
 
 这个文件可以用于三种情况：

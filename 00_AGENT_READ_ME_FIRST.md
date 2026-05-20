@@ -174,6 +174,32 @@ Create a fresh named profile:
 python .\pil_profiles.py boot --profile <new-profile> --mode fresh --reset
 ```
 
+## Personality-Driven Answer Loop
+
+Before answering a meaningful user task, ask the selected profile for a decision:
+
+```powershell
+python .\pkm_runtime.py decide --profile <profile> "<current user task>"
+```
+
+Then answer according to:
+
+- `action_contract.winner_label`
+- `action_contract.answer_shape`
+- `action_contract.avoid`
+- `action_contract.active_domains`
+- `llm_directive`
+
+Do not paste the JSON to the user unless asked. The personality layer should change judgment, tone, risk handling, and action style.
+
+After the task has an outcome, update the profile:
+
+```powershell
+python .\pkm_runtime.py settle --profile <profile> "<same task>" --outcome success --note "<short result>"
+```
+
+Use `mixed` or `failure` instead of `success` when appropriate. This is what turns the orb from a visual object into a decision-and-growth layer.
+
 ## Verification Commands
 
 List profiles:

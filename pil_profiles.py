@@ -263,7 +263,8 @@ def decide(profile: str, text: str) -> dict[str, Any]:
     write_signal(True, paths.signal)
     try:
         result = pkm.decide(state, text)
-        result["runtime"] = {"profile": paths.slug, "mode": mode, "state": str(state_file)}
+        pkm.export_visible(state, paths.visible, runtime=result.get("orb_runtime"))
+        result["runtime"] = {"profile": paths.slug, "mode": mode, "state": str(state_file), "visible": str(paths.visible)}
         return result
     finally:
         write_signal(False, paths.signal)

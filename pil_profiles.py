@@ -198,6 +198,7 @@ def restore_backup(backup_path: Path | None, profile: str = "", open_orb: bool =
         "visible": str(paths.visible),
         "signal": str(paths.signal),
         "stage": visible.get("agent", {}).get("stage"),
+        "formation_kernel": visible.get("model", {}).get("formation", {}).get("disposition_kernel", {}),
         "opened": bool(open_orb),
     }
 

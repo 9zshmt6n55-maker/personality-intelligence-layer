@@ -49,7 +49,44 @@ PIL_OLD_AGENT_BACKUP_WORKSHEET.md
 profile.json
 ```
 
-### 5. Do not publish private runtime data
+### 5. Separate memory from formation
+
+PDK should not treat old chat logs as the personality itself. Raw memory,
+retrieval stores, and documents can support an agent, but the kernel should
+store compressed disposition: boundaries, risk posture, action habits,
+correction rules, and situation-response signatures.
+
+Applied here:
+
+```text
+formation.initial_conditions
+formation.long_term_environment
+formation.feedback_history
+formation.disposition_kernel
+```
+
+The design target is:
+
+```text
+initial conditions + long-term environment + feedback history -> behavioral disposition
+```
+
+### 6. Keep portable kernels smaller than private histories
+
+Future interop should exchange a compact, auditable behavioral profile, not a
+dump of raw transcripts. A profile can carry provenance, compressed signals,
+and correction rules while keeping private source records outside the exchange
+boundary.
+
+Applied here:
+
+```text
+PDK_THEORY.md
+growth_trace[].formation_delta
+export_visible().model.formation
+```
+
+### 7. Do not publish private runtime data
 
 Personal profiles are derived from private conversations and task history. They are ignored by Git by default.
 
@@ -66,8 +103,27 @@ imports/feishu/
 
 ## External References
 
+### Personality and Formation Theory
+
+- CAPS / Cognitive-Affective Personality System: https://doi.org/10.1037/0033-295X.102.2.246
+- HEXACO Personality Inventory: https://hexaco.org/
+- Computational personality recognition from language: https://doi.org/10.1016/j.jrp.2006.10.003
+- Digital records and private traits: https://www.pnas.org/doi/10.1073/pnas.1218772110
+
+### Agent Memory and Persistence
+
 - LangGraph persistence: https://docs.langchain.com/oss/python/langgraph/persistence
 - AutoGen AgentChat state save/load: https://microsoft.github.io/autogen/dev/user-guide/agentchat-user-guide/tutorial/state.html
 - Letta context hierarchy: https://docs.letta.com/guides/core-concepts/memory/context-hierarchy/
 - Letta MemFS git-backed memory: https://docs.letta.com/letta-code/memfs/
 - CrewAI memory: https://docs.crewai.com/en/concepts/memory
+- Generative Agents: https://arxiv.org/abs/2304.03442
+- MemGPT: https://arxiv.org/abs/2310.08560
+- MemoryBank: https://arxiv.org/abs/2305.10250
+
+### Interoperability and User-Controlled Data
+
+- Model Context Protocol: https://modelcontextprotocol.io/docs
+- Agent2Agent Protocol: https://github.com/a2aproject/A2A
+- Solid Protocol: https://solidproject.org/TR/protocol
+- W3C DID Core: https://www.w3.org/TR/did-1.0/

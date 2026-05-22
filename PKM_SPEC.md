@@ -20,6 +20,7 @@ PKM is responsible for:
 - motives
 - owner relationship model
 - behavior policy weights
+- formation state
 - situation prototypes
 - growth traces
 - visible personality morphology
@@ -44,6 +45,7 @@ event
 -> behavior posture for the LLM/tool layer
 -> outcome feedback
 -> latent update
+-> formation update
 -> visible morphology update
 -> raw detail may be forgotten
 ```
@@ -62,6 +64,29 @@ Groups:
 - `values`: value priorities
 - `relation_owner`: how the agent relates to its owner
 - `policy`: action-selection biases
+
+## Formation Layer
+
+PDK adds a formation layer above ordinary latent weights:
+
+```text
+initial_conditions + long_term_environment + feedback_history -> disposition_kernel
+```
+
+This layer exists because stable behavior is not only a trait snapshot. It is
+the result of seed constraints, repeated environment, and outcome feedback.
+
+Top-level state group:
+
+- `formation.initial_conditions`: base model, temperament seed, value seed, and capability boundary
+- `formation.long_term_environment`: owner environment, task pressure, tool ecology, social pressure, and risk climate
+- `formation.feedback_history`: success reinforcement, failure correction, owner correction, trust feedback, and stress exposure
+- `formation.disposition_kernel`: stability, plasticity, boundary density, risk posture, and interoperability readiness
+
+`teach` primarily shapes owner environment and correction history. `settle`
+primarily shapes success, failure, trust, and stress traces. The raw transcript
+does not enter the formation layer. Only compressed appraisal and outcome
+signals enter it.
 
 ## Appraisal Vector
 
@@ -181,10 +206,14 @@ PKM uses research families as engineering constraints:
 
 - Big Five / Big Five aspects: broad traits are hierarchical, not flat labels.
 - HEXACO: integrity and manipulation resistance deserve a separate axis.
+- CAPS: personality is a stable set of situation-response signatures, not only global trait labels.
 - Circumplex affect: emotion is encoded through valence and arousal.
 - Component appraisal: events become relevance, implication, coping, and norm signals.
 - Reinforcement learning: outcomes update policy bias over time.
 - Predictive regulation / active inference: novelty and uncertainty create pressure.
+- Computational personality recognition: digital traces can expose stable tendencies, but PDK turns them into executable disposition rather than only a score.
+- Agent memory systems: reflection and retrieval remain separate from the behavior-shaping kernel.
+- Interoperability protocols: portable agent identity needs a disposition format, not only tool calls and raw data exchange.
 
 ## Multi-Form Traits
 
@@ -219,6 +248,7 @@ PKM keeps:
 - chosen behavior posture
 - outcome
 - latent deltas
+- formation deltas
 - visible deltas
 - short growth reason
 

@@ -4,9 +4,15 @@ Read this file before running commands.
 
 This project implements PDK, the Personality Drive Kernel: a persistent, inspectable, growing personality-driven kernel layer for AI agents.
 
+PDK treats personality as formation:
+
+```text
+initial conditions + long-term environment + feedback history -> behavioral disposition kernel
+```
+
 Some runtime files still use the earlier `PIL_*` names for compatibility. Treat those files as PDK backup/protocol files.
 
-The project is not a long-context store and not a role-play prompt. Each agent must have its own durable profile.
+The project is not a long-context store, not a raw memory dump, and not a role-play prompt. Each agent must have its own durable profile.
 
 ## Work Directory
 
@@ -188,9 +194,10 @@ Then answer according to:
 - `action_contract.answer_shape`
 - `action_contract.avoid`
 - `action_contract.active_domains`
+- `action_contract.formation_kernel`
 - `llm_directive`
 
-Do not paste the JSON to the user unless asked. The personality layer should change judgment, tone, risk handling, and action style.
+Do not paste the JSON to the user unless asked. The personality layer should change judgment, tone, risk handling, boundary strength, and action style. Treat `formation_kernel` as compressed disposition, not as factual memory.
 
 After the task has an outcome, update the profile:
 

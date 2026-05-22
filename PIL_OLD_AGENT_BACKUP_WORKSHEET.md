@@ -194,7 +194,39 @@ design-agent
 |---|---|---|
 |  |  |  |
 
-## M. 必须输出的 Markdown 文件
+## M. 成格层
+
+这一部分是 PDK 的新核心，用来说明这个老代理是怎样“成格”的。
+
+```text
+初始条件 + 长期环境 + 反馈历史 -> 行为倾向内核
+```
+
+如果不能精确判断，就给低置信度或使用默认值，不要编造。
+
+| 字段 | value | confidence | 说明 |
+|---|---:|---:|---|
+| initial_conditions.temperament_seed |  |  | 初始气质/基础反应倾向 |
+| initial_conditions.model_base |  |  | 基础模型/底层能力约束 |
+| initial_conditions.value_seed |  |  | 初始价值种子 |
+| initial_conditions.capability_boundary |  |  | 能力和权限边界 |
+| long_term_environment.owner_environment |  |  | 主人长期偏好和相处方式 |
+| long_term_environment.task_domain_pressure |  |  | 长期任务领域压力 |
+| long_term_environment.tool_ecology |  |  | 工具环境和执行方式 |
+| long_term_environment.social_pressure |  |  | 社交、冲突、协作压力 |
+| long_term_environment.risk_climate |  |  | 长期风险气候 |
+| feedback_history.success_reinforcement |  |  | 成功经验强化 |
+| feedback_history.failure_correction |  |  | 失败后修正强度 |
+| feedback_history.owner_correction |  |  | 主人纠偏塑造强度 |
+| feedback_history.trust_feedback |  |  | 信任反馈 |
+| feedback_history.stress_exposure |  |  | 压力暴露 |
+| disposition_kernel.stability |  |  | 稳定性 |
+| disposition_kernel.plasticity |  |  | 可塑性 |
+| disposition_kernel.boundary_density |  |  | 边界密度 |
+| disposition_kernel.risk_posture |  |  | 风险姿态 |
+| disposition_kernel.interoperability_readiness |  |  | 互通准备度 |
+
+## N. 必须输出的 Markdown 文件
 
 最终输出文件名：
 
@@ -239,6 +271,15 @@ PIL_PERSONALITY_BACKUP.md
     "relation_owner": {},
     "policy": {},
     "style": {}
+  },
+  "formation": {
+    "schema": "pdk.formation.v1",
+    "equation": "initial_conditions + long_term_environment + feedback_history -> disposition_kernel",
+    "scope": "agent",
+    "initial_conditions": {},
+    "long_term_environment": {},
+    "feedback_history": {},
+    "disposition_kernel": {}
   },
   "situation_prototypes": [],
   "failure_modes": [],

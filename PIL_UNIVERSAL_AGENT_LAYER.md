@@ -336,6 +336,38 @@ current mode: mature continuity.
       "action_plan_bias": 0.0
     }
   },
+  "formation": {
+    "schema": "pdk.formation.v1",
+    "equation": "initial_conditions + long_term_environment + feedback_history -> disposition_kernel",
+    "scope": "agent",
+    "initial_conditions": {
+      "temperament_seed": 0.5,
+      "model_base": 0.5,
+      "value_seed": 0.5,
+      "capability_boundary": 0.5
+    },
+    "long_term_environment": {
+      "owner_environment": 0.5,
+      "task_domain_pressure": 0.5,
+      "tool_ecology": 0.5,
+      "social_pressure": 0.5,
+      "risk_climate": 0.5
+    },
+    "feedback_history": {
+      "success_reinforcement": 0.0,
+      "failure_correction": 0.0,
+      "owner_correction": 0.0,
+      "trust_feedback": 0.0,
+      "stress_exposure": 0.0
+    },
+    "disposition_kernel": {
+      "stability": 0.5,
+      "plasticity": 0.5,
+      "boundary_density": 0.5,
+      "risk_posture": 0.5,
+      "interoperability_readiness": 0.2
+    }
+  },
   "situation_prototypes": [
     {
       "name": "高风险任务",

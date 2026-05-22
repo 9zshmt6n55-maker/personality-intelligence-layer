@@ -66,7 +66,65 @@ RESEARCH_FOUNDATIONS = [
         "use": "novelty and uncertainty act as prediction-error pressure on behavior",
         "source": "Friston, 2010",
     },
+    {
+        "id": "caps",
+        "label": "CAPS situation-response signatures",
+        "use": "treat personality as stable if-situation-then-response patterns rather than static labels",
+        "source": "Mischel & Shoda, 1995",
+    },
+    {
+        "id": "computational_personality",
+        "label": "Computational personality recognition",
+        "use": "derive stable tendencies from digital traces while keeping raw private records outside the kernel",
+        "source": "Mairesse et al., 2007; Kosinski et al., 2013",
+    },
+    {
+        "id": "agent_memory",
+        "label": "Agent memory systems",
+        "use": "separate factual recall and retrieval from behavior-shaping disposition",
+        "source": "Generative Agents, 2023; MemGPT, 2023; MemoryBank, 2023",
+    },
+    {
+        "id": "interoperability",
+        "label": "Agent and data interoperability",
+        "use": "prepare personality kernels for future portable schemas across agents, tools, and user-controlled data stores",
+        "source": "MCP; A2A; Solid; W3C DID",
+    },
 ]
+
+
+FORMATION_MODEL = {
+    "schema": "pdk.formation.v1",
+    "equation": "initial_conditions + long_term_environment + feedback_history -> disposition_kernel",
+    "scope": "agent",
+    "initial_conditions": {
+        "temperament_seed": 0.50,
+        "model_base": 0.50,
+        "value_seed": 0.50,
+        "capability_boundary": 0.50,
+    },
+    "long_term_environment": {
+        "owner_environment": 0.50,
+        "task_domain_pressure": 0.50,
+        "tool_ecology": 0.50,
+        "social_pressure": 0.50,
+        "risk_climate": 0.50,
+    },
+    "feedback_history": {
+        "success_reinforcement": 0.00,
+        "failure_correction": 0.00,
+        "owner_correction": 0.00,
+        "trust_feedback": 0.00,
+        "stress_exposure": 0.00,
+    },
+    "disposition_kernel": {
+        "stability": 0.18,
+        "plasticity": 0.8084,
+        "boundary_density": 0.5675,
+        "risk_posture": 0.545,
+        "interoperability_readiness": 0.26915,
+    },
+}
 
 
 TRAITS = {
@@ -1066,6 +1124,7 @@ def default_state() -> dict[str, Any]:
             "policy": copy.deepcopy(POLICY),
             "style": copy.deepcopy(STYLE),
         },
+        "formation": copy.deepcopy(FORMATION_MODEL),
         "situation_prototypes": [],
         "growth_trace": [],
         "learning": {
@@ -1097,6 +1156,18 @@ def ensure_defaults(state: dict[str, Any]) -> None:
         state["latent"].setdefault(group, {})
         for key, value in values.items():
             state["latent"][group].setdefault(key, value)
+    if not isinstance(state.get("formation"), dict):
+        state["formation"] = copy.deepcopy(template["formation"])
+    state.setdefault("formation", copy.deepcopy(template["formation"]))
+    for group, values in template["formation"].items():
+        if isinstance(values, dict):
+            if not isinstance(state["formation"].get(group), dict):
+                state["formation"][group] = {}
+            state["formation"].setdefault(group, {})
+            for key, value in values.items():
+                state["formation"][group].setdefault(key, value)
+        else:
+            state["formation"].setdefault(group, values)
     state.setdefault("situation_prototypes", [])
     state.setdefault("growth_trace", [])
     state.setdefault("learning", template["learning"])
@@ -1426,6 +1497,7 @@ def build_action_contract(
     protocol = ACTION_PROTOCOLS.get(winner, ACTION_PROTOCOLS["small_step"])
     domains = influencing_domains(state, decision)
     style = state["latent"].get("style", STYLE)
+    formation = formation_summary(state)
     return {
         "schema": "pkm.action_contract.v1",
         "purpose": "Run this before answering. The orb is a decision interface, not only a visual skin.",
@@ -1437,6 +1509,11 @@ def build_action_contract(
         "active_domains": domains,
         "domain_battle": decision["ranked"][:5],
         "appraisal_tags": appraisal.get("active", [])[:8],
+        "formation_kernel": {
+            "equation": formation["equation"],
+            "disposition_kernel": formation["disposition_kernel"],
+            "privacy_boundary": formation["privacy_boundary"],
+        },
         "response_style": {
             "conclusion_first": round(float(style.get("conclusion_first", 0.5)), 4),
             "directness": round(float(style.get("answer_directness", 0.5)), 4),
@@ -1510,7 +1587,8 @@ def build_llm_directive(
             f"Chosen behavioral posture: {decision['winner_label']}.",
             f"Style posture: {style_directive}.",
             "Act from the current task facts only. Do not invent long-term memory.",
-            "Use the personality kernel as behavioral disposition: judgment style, risk posture, boundary strength, and response tone.",
+            "Use the personality kernel as behavioral disposition formed by initial conditions, long-term environment, and feedback history.",
+            "Let it affect judgment style, risk posture, boundary strength, and response tone.",
         ]
     )
 
@@ -1551,6 +1629,7 @@ def teach(state: dict[str, Any], text: str) -> dict[str, Any]:
         apply_owner_language(deltas, state, text, lr)
 
     update_prototype(state, appraisal, "teaching", "owner_teaching", positive=True)
+    formation_update = update_formation_model(state, appraisal, "teaching", "absorbed")
     trace = make_trace(
         state,
         kind="teaching",
@@ -1560,6 +1639,7 @@ def teach(state: dict[str, Any], text: str) -> dict[str, Any]:
         outcome="absorbed",
         deltas=deltas,
         reason="Owner teaching was compressed into latent disposition, not stored as conversation history.",
+        formation_update=formation_update,
     )
     append_trace(state, trace)
     increment_interaction(state)
@@ -1657,6 +1737,7 @@ def settle(state: dict[str, Any], text: str, outcome: str, note: str = "") -> di
 
     relax_affect(state)
     update_prototype(state, appraisal, "event", action, positive=positive)
+    formation_update = update_formation_model(state, appraisal, "event", outcome)
     reason = build_growth_reason(appraisal, action, outcome, note)
     trace = make_trace(
         state,
@@ -1667,6 +1748,7 @@ def settle(state: dict[str, Any], text: str, outcome: str, note: str = "") -> di
         outcome=outcome,
         deltas=deltas,
         reason=reason,
+        formation_update=formation_update,
     )
     append_trace(state, trace)
     increment_interaction(state)
@@ -1758,6 +1840,136 @@ def build_growth_reason(appraisal: dict[str, Any], action: str, outcome: str, no
     )
 
 
+def _nudge_formation(
+    formation: dict[str, Any],
+    group: str,
+    key: str,
+    amount: float,
+    low: float = 0.0,
+    high: float = 1.0,
+) -> float:
+    current = float(formation.setdefault(group, {}).get(key, 0.0))
+    updated = round(max(low, min(high, current + amount)), 5)
+    formation[group][key] = updated
+    return round(updated - current, 5)
+
+
+def refresh_disposition_kernel(state: dict[str, Any]) -> None:
+    formation = state.setdefault("formation", copy.deepcopy(FORMATION_MODEL))
+    kernel = formation.setdefault("disposition_kernel", {})
+    import_hints = formation.get("import_hints", {})
+    latent = state["latent"]
+    interaction_count = int(state["manifest"].get("interaction_count", 0))
+    maturity = clamp(math.log1p(interaction_count) / math.log1p(80))
+
+    risk_posture = (
+        float(latent["traits"].get("caution", 0.5))
+        + float(latent["values"].get("safety", 0.5))
+        + float(latent["policy"].get("verify_first", 0.5))
+        + float(latent["policy"].get("refuse", 0.5))
+    ) / 4.0
+    boundary_density = (
+        float(latent["traits"].get("assertiveness", 0.5))
+        + float(latent["values"].get("dignity", 0.5))
+        + float(latent["values"].get("privacy", 0.5))
+        + float(latent["policy"].get("assertive_boundary", 0.5))
+    ) / 4.0
+    feedback = formation.get("feedback_history", {})
+    feedback_volume = sum(_coerce_unit(value, 0.0) for value in feedback.values()) / max(len(feedback), 1)
+    stability = clamp(0.18 + maturity * 0.56 + feedback_volume * 0.18)
+    if isinstance(import_hints, dict):
+        if "risk_posture_target" in import_hints:
+            target = _coerce_unit(import_hints.get("risk_posture_target"), risk_posture)
+            risk_posture = clamp(risk_posture * 0.30 + target * 0.70)
+        if "boundary_density_target" in import_hints:
+            target = _coerce_unit(import_hints.get("boundary_density_target"), boundary_density)
+            boundary_density = clamp(boundary_density * 0.30 + target * 0.70)
+        stability = max(stability, _coerce_unit(import_hints.get("stability_floor"), 0.0))
+
+    kernel["risk_posture"] = round(clamp(risk_posture), 5)
+    kernel["boundary_density"] = round(clamp(boundary_density), 5)
+    kernel["stability"] = round(stability, 5)
+    plasticity = clamp(0.92 - stability * 0.62)
+    if isinstance(import_hints, dict) and "plasticity_target" in import_hints:
+        plasticity_target = _coerce_unit(import_hints.get("plasticity_target"), plasticity)
+        plasticity = clamp(plasticity * 0.62 + plasticity_target * 0.38)
+    kernel["plasticity"] = round(plasticity, 5)
+    kernel["interoperability_readiness"] = round(
+        clamp(0.18 + maturity * 0.22 + stability * 0.18 + boundary_density * 0.10),
+        5,
+    )
+
+
+def update_formation_model(
+    state: dict[str, Any], appraisal: dict[str, Any], kind: str, outcome: str
+) -> dict[str, dict[str, float]]:
+    ensure_defaults(state)
+    formation = state["formation"]
+    a = appraisal["vector"]
+    updates: dict[str, dict[str, float]] = {}
+
+    def record(group: str, key: str, amount: float) -> None:
+        delta = _nudge_formation(formation, group, key, amount)
+        if abs(delta) >= 0.00001:
+            updates.setdefault(group, {})[key] = delta
+
+    record("long_term_environment", "task_domain_pressure", 0.008 * (a["technical"] + a["opportunity"]))
+    record("long_term_environment", "social_pressure", 0.008 * (a["conflict"] + a["social_cost"] + a["insult"]))
+    record("long_term_environment", "risk_climate", 0.010 * (a["risk"] + a["irreversibility"] + a["overpromise"]))
+    record("long_term_environment", "tool_ecology", 0.006 * a["technical"])
+
+    if kind == "teaching":
+        record("long_term_environment", "owner_environment", 0.010 + 0.010 * a["owner_instruction"])
+        record("feedback_history", "owner_correction", 0.020 + 0.015 * (a["correction"] + a["owner_instruction"]))
+        record("feedback_history", "trust_feedback", 0.010 + 0.012 * (a["praise"] + a["trust_signal"]))
+    elif outcome == "success":
+        record("feedback_history", "success_reinforcement", 0.020)
+        record("feedback_history", "trust_feedback", 0.010 + 0.010 * a["trust_signal"])
+    elif outcome == "failure":
+        record("feedback_history", "failure_correction", 0.024)
+        record("feedback_history", "stress_exposure", 0.016 + 0.012 * (a["risk"] + a["conflict"]))
+    elif outcome == "mixed":
+        record("feedback_history", "success_reinforcement", 0.008)
+        record("feedback_history", "failure_correction", 0.008)
+
+    before_kernel = copy.deepcopy(formation.get("disposition_kernel", {}))
+    refresh_disposition_kernel(state)
+    for key, value in formation.get("disposition_kernel", {}).items():
+        old = float(before_kernel.get(key, value))
+        delta = round(float(value) - old, 5)
+        if abs(delta) >= 0.00001:
+            updates.setdefault("disposition_kernel", {})[key] = delta
+    return updates
+
+
+def formation_summary(state: dict[str, Any]) -> dict[str, Any]:
+    ensure_defaults(state)
+    refresh_disposition_kernel(state)
+    formation = state["formation"]
+    return {
+        "schema": formation.get("schema", "pdk.formation.v1"),
+        "equation": formation.get("equation", FORMATION_MODEL["equation"]),
+        "scope": formation.get("scope", "agent"),
+        "initial_conditions": {
+            key: round(_coerce_unit(value, 0.0), 4)
+            for key, value in formation.get("initial_conditions", {}).items()
+        },
+        "long_term_environment": {
+            key: round(_coerce_unit(value, 0.0), 4)
+            for key, value in formation.get("long_term_environment", {}).items()
+        },
+        "feedback_history": {
+            key: round(_coerce_unit(value, 0.0), 4)
+            for key, value in formation.get("feedback_history", {}).items()
+        },
+        "disposition_kernel": {
+            key: round(_coerce_unit(value, 0.0), 4)
+            for key, value in formation.get("disposition_kernel", {}).items()
+        },
+        "privacy_boundary": "Raw transcripts stay outside PDK; only compressed formation signals enter the kernel.",
+    }
+
+
 def make_trace(
     state: dict[str, Any],
     kind: str,
@@ -1767,6 +1979,7 @@ def make_trace(
     outcome: str,
     deltas: dict[str, dict[str, float]],
     reason: str,
+    formation_update: dict[str, dict[str, float]] | None = None,
 ) -> dict[str, Any]:
     return {
         "id": "trace_" + text_fingerprint(source + now_iso()),
@@ -1784,6 +1997,7 @@ def make_trace(
         "outcome": outcome,
         "visible_delta": visible_delta_from_latent_deltas(deltas),
         "latent_delta": format_deltas(deltas),
+        "formation_delta": format_deltas(formation_update or {}),
         "reason": reason,
         "forgetting": "Raw text is not required for personality continuity; this trace keeps only tags, deltas, and a fingerprint.",
     }
@@ -2089,6 +2303,7 @@ def visible_summary(state: dict[str, Any]) -> dict[str, Any]:
         "stage": state["manifest"]["development_stage"],
         "anchors": {key: round(value, 4) for key, value in anchors.items()},
         "interaction_count": state["manifest"].get("interaction_count", 0),
+        "formation": formation_summary(state),
     }
 
 
@@ -2132,7 +2347,7 @@ def export_visible(state: dict[str, Any], path: Path, runtime: dict[str, Any] | 
         },
         "model": {
             "base_shape": "sphere",
-            "concept": "A personality starts as a near-sphere and deforms into a regional attractor landscape. Each interaction changes latent traits, motives, values, affect, relation posture, and policy. The visible body is the resultant force field, not a memory transcript.",
+            "concept": "A personality starts as a near-sphere and deforms into a regional attractor landscape. Initial conditions, long-term environment, and feedback history shape a disposition kernel. Each interaction changes latent traits, motives, values, affect, relation posture, and policy. The visible body is the resultant force field, not a memory transcript.",
             "encoding": {
                 "area": "behavioral territory share",
                 "height": "activation strength",
@@ -2145,6 +2360,7 @@ def export_visible(state: dict[str, Any], path: Path, runtime: dict[str, Any] | 
                 "orbit": "habit path formed by repeated feedback"
             },
             "research_foundations": RESEARCH_FOUNDATIONS,
+            "formation": formation_summary(state),
             "dynamics": force_summary,
             "substrate": {
                 "kind": "latent_potential_field",
@@ -2416,10 +2632,31 @@ def export_handoff(state: dict[str, Any], path: Path, mode: str = "fresh", langu
 
 
 def _coerce_unit(value: Any, fallback: float) -> float:
+    if isinstance(value, dict):
+        for key in ("value", "score", "level", "weight"):
+            if key in value:
+                value = value[key]
+                break
+        else:
+            return round(clamp(fallback), 5)
     try:
         return round(clamp(float(value)), 5)
     except Exception:
         return round(clamp(fallback), 5)
+
+
+def _coerce_nonnegative_int(value: Any, fallback: int = 0) -> int:
+    if isinstance(value, dict):
+        for key in ("value", "count", "estimated", "n"):
+            if key in value:
+                value = value[key]
+                break
+        else:
+            return max(0, int(fallback))
+    try:
+        return max(0, int(round(float(value))))
+    except Exception:
+        return max(0, int(fallback))
 
 
 def _extract_json_object(text: str) -> dict[str, Any]:
@@ -2466,44 +2703,323 @@ def _latent_deltas(
     return deltas
 
 
+def _formation_deltas(before: dict[str, Any], after: dict[str, Any]) -> dict[str, dict[str, float]]:
+    deltas: dict[str, dict[str, float]] = {}
+    for group in ("initial_conditions", "long_term_environment", "feedback_history", "disposition_kernel"):
+        values = after.get(group, {})
+        if not isinstance(values, dict):
+            continue
+        for key, value in values.items():
+            old = before.get(group, {}).get(key, value) if isinstance(before.get(group), dict) else value
+            try:
+                delta = round(float(value) - float(old), 5)
+            except Exception:
+                continue
+            if abs(delta) >= 0.00001:
+                deltas.setdefault(group, {})[key] = delta
+    return deltas
+
+
+def _backup_item_text(item: Any, keys: list[str]) -> str:
+    if not isinstance(item, dict):
+        return str(item)
+    chunks: list[str] = []
+    for key in keys:
+        value = item.get(key)
+        if value is None:
+            continue
+        if isinstance(value, list):
+            chunks.extend(str(part) for part in value)
+        elif isinstance(value, dict):
+            chunks.extend(str(part) for part in value.values())
+        else:
+            chunks.append(str(value))
+    return " ".join(part.strip() for part in chunks if str(part).strip())
+
+
+def _infer_action_from_backup_text(text: str, fallback: str = "small_step") -> str:
+    appraisal = appraise(text)
+    a = appraisal["vector"]
+    if a["boundary_violation"] or "拒绝" in text or "refuse" in text.lower():
+        return "refuse"
+    if a["risk"] or a["irreversibility"] or a["overpromise"]:
+        return "verify_first"
+    if a["ambiguity"]:
+        return "clarify_boundaries"
+    if a["conflict"] or a["insult"] or a["social_cost"]:
+        return "deescalate"
+    if a["owner_instruction"] or a["correction"]:
+        return "small_step"
+    if a["opportunity"] or a["technical"]:
+        return "small_step"
+    return fallback if fallback in POLICY else "small_step"
+
+
 def _backup_prototypes(backup: dict[str, Any]) -> list[dict[str, Any]]:
     prototypes: list[dict[str, Any]] = []
-    raw_items = backup.get("situation_prototypes") or backup.get("prototypes") or []
-    if not isinstance(raw_items, list):
-        return prototypes
-    for item in raw_items[:24]:
-        if not isinstance(item, dict):
+    groups = [
+        (
+            backup.get("situation_prototypes") or backup.get("prototypes") or [],
+            "mature_backup",
+            0.62,
+            "small_step",
+            ["name", "label", "trigger", "situation", "default_judgment", "default_action", "risk", "growth_impact"],
+        ),
+        (
+            backup.get("failure_modes") or [],
+            "failure_mode",
+            0.64,
+            "verify_first",
+            ["failure_mode", "name", "表现", "trigger", "触发原因", "user_correction", "用户通常怎么纠正", "修正后的规则", "corrected_rule"],
+        ),
+        (
+            backup.get("correction_rules") or [],
+            "correction_rule",
+            0.68,
+            "small_step",
+            ["rule", "name", "trigger", "condition", "correction", "action", "修正后的规则", "说明"],
+        ),
+    ]
+    for raw_items, kind, confidence_fallback, fallback_action, text_keys in groups:
+        if not isinstance(raw_items, list):
             continue
-        raw_tags = item.get("tags") or item.get("trigger_tags") or item.get("active") or []
-        if isinstance(raw_tags, str):
-            raw_tags = [raw_tags]
-        tags = [str(tag) for tag in raw_tags if str(tag) in APPRAISAL_DIMS or str(tag) == "ordinary"]
-        if not tags:
-            tags = ["ordinary"]
-        action = str(item.get("action") or item.get("recommended_action") or item.get("policy") or "small_step")
-        if action not in POLICY:
-            action = "small_step"
-        confidence = _coerce_unit(item.get("confidence", item.get("weight", 0.62)), 0.62)
-        seen = max(1, int(round(4 + confidence * 12)))
-        centroid = {key: 0.0 for key in APPRAISAL_DIMS}
-        for tag in tags:
-            if tag in centroid:
-                centroid[tag] = round(0.52 + confidence * 0.36, 5)
-        prototypes.append(
-            {
-                "id": "proto_" + text_fingerprint("|".join(tags) + action),
-                "name": str(item.get("name", item.get("label", ""))),
-                "tags": tags,
-                "centroid": centroid,
-                "seen": seen,
-                "success": seen,
-                "failure": 0,
-                "last_action": action,
-                "kind": "mature_backup",
-                "updated_at": now_iso(),
-            }
-        )
+        for item in raw_items[:24]:
+            text = _backup_item_text(item, text_keys)
+            if not text:
+                continue
+            item_dict = item if isinstance(item, dict) else {}
+            raw_tags = item_dict.get("tags") or item_dict.get("trigger_tags") or item_dict.get("active") or []
+            if isinstance(raw_tags, str):
+                raw_tags = [raw_tags]
+            tags = [str(tag) for tag in raw_tags if str(tag) in APPRAISAL_DIMS or str(tag) == "ordinary"]
+            if not tags:
+                tags = appraise(text)["active"] or ["ordinary"]
+            action = str(
+                item_dict.get("action")
+                or item_dict.get("recommended_action")
+                or item_dict.get("policy")
+                or ""
+            )
+            if action not in POLICY:
+                action = _infer_action_from_backup_text(text, fallback_action)
+            confidence = _coerce_unit(
+                item_dict.get("confidence", item_dict.get("weight", confidence_fallback)),
+                confidence_fallback,
+            )
+            seen = max(1, int(round(4 + confidence * 12)))
+            centroid = {key: 0.0 for key in APPRAISAL_DIMS}
+            for tag in tags:
+                if tag in centroid:
+                    centroid[tag] = round(0.52 + confidence * 0.36, 5)
+            failure = max(1, int(round(seen * 0.20))) if kind == "failure_mode" else 0
+            name = str(item_dict.get("name", item_dict.get("label", ""))).strip()
+            if not name:
+                name = text[:60]
+            prototypes.append(
+                {
+                    "id": "proto_" + text_fingerprint(kind + "|" + text + "|" + action),
+                    "name": name,
+                    "tags": tags,
+                    "centroid": centroid,
+                    "seen": seen,
+                    "success": seen,
+                    "failure": failure,
+                    "last_action": action,
+                    "kind": kind,
+                    "updated_at": now_iso(),
+                }
+            )
+            if len(prototypes) >= 24:
+                return prototypes
     return prototypes
+
+
+def _mean_unit(values: list[Any], fallback: float) -> float:
+    numbers = [_coerce_unit(value, fallback) for value in values if value is not None]
+    if not numbers:
+        return round(clamp(fallback), 5)
+    return round(clamp(sum(numbers) / len(numbers)), 5)
+
+
+def _list_pressure(value: Any, divisor: float) -> float:
+    if not isinstance(value, list) or divisor <= 0:
+        return 0.0
+    return clamp(len(value) / divisor)
+
+
+def _apply_backup_formation(
+    state: dict[str, Any], backup: dict[str, Any], imported_prototypes: list[dict[str, Any]]
+) -> dict[str, dict[str, float]]:
+    ensure_defaults(state)
+    before = copy.deepcopy(state.get("formation", {}))
+    formation = state["formation"]
+    latent = state["latent"]
+    source_agent = backup.get("source_agent") if isinstance(backup.get("source_agent"), dict) else {}
+    evidence = backup.get("evidence") if isinstance(backup.get("evidence"), dict) else {}
+    maturity = backup.get("maturity") if isinstance(backup.get("maturity"), dict) else {}
+    explicit = backup.get("formation") if isinstance(backup.get("formation"), dict) else {}
+
+    explicit_keys: set[tuple[str, str]] = set()
+    for group in ("initial_conditions", "long_term_environment", "feedback_history", "disposition_kernel"):
+        values = explicit.get(group)
+        if not isinstance(values, dict):
+            continue
+        formation.setdefault(group, {})
+        for key, value in values.items():
+            if key in formation[group]:
+                formation[group][key] = _coerce_unit(value, float(formation[group][key]))
+                explicit_keys.add((group, key))
+    if isinstance(explicit.get("scope"), str) and explicit["scope"].strip():
+        formation["scope"] = explicit["scope"].strip()[:48]
+
+    def set_derived(group: str, key: str, value: float) -> None:
+        if (group, key) not in explicit_keys:
+            formation.setdefault(group, {})[key] = round(clamp(value), 5)
+
+    maturity_score = _coerce_unit(maturity.get("maturity_score"), 0.78)
+    stability_hint = _coerce_unit(maturity.get("stability"), max(0.45, maturity_score * 0.86))
+    plasticity_hint = _coerce_unit(maturity.get("plasticity"), clamp(1.0 - stability_hint))
+    differentiation = _coerce_unit(maturity.get("differentiation"), maturity_score)
+    evidence_confidence = _coerce_unit(evidence.get("evidence_confidence"), 0.55)
+    estimated_interactions = _coerce_nonnegative_int(
+        evidence.get("estimated_interactions"), int(state["manifest"].get("interaction_count", 0))
+    )
+    interaction_pressure = clamp(math.log1p(estimated_interactions) / math.log1p(240))
+    primary_use_cases = source_agent.get("primary_use_cases", [])
+    primary_use_pressure = _list_pressure(primary_use_cases, 8.0)
+    prototype_pressure = clamp(len(imported_prototypes) / 24.0)
+    failure_pressure = _list_pressure(backup.get("failure_modes"), 10.0)
+    correction_pressure = _list_pressure(backup.get("correction_rules"), 10.0)
+    technical_pressure = 0.0
+    if imported_prototypes:
+        technical_pressure = sum(
+            1 for proto in imported_prototypes if "technical" in set(proto.get("tags", []))
+        ) / len(imported_prototypes)
+
+    traits = latent["traits"]
+    affect = latent["affect"]
+    values = latent["values"]
+    relation = latent["relation_owner"]
+    policy = latent["policy"]
+
+    set_derived(
+        "initial_conditions",
+        "temperament_seed",
+        _mean_unit(
+            [
+                traits.get("curiosity"),
+                traits.get("self_control"),
+                traits.get("resilience"),
+                traits.get("adaptability"),
+                traits.get("patience"),
+            ],
+            0.5,
+        ),
+    )
+    set_derived("initial_conditions", "model_base", clamp(0.50 + maturity_score * 0.16))
+    set_derived("initial_conditions", "value_seed", _mean_unit(list(values.values()), 0.5))
+    set_derived(
+        "initial_conditions",
+        "capability_boundary",
+        _mean_unit(
+            [
+                values.get("safety"),
+                values.get("privacy"),
+                policy.get("verify_first"),
+                policy.get("refuse"),
+            ],
+            0.5,
+        ),
+    )
+
+    set_derived(
+        "long_term_environment",
+        "owner_environment",
+        _mean_unit(
+            [
+                relation.get("trust"),
+                relation.get("correction_acceptance"),
+                relation.get("independent_judgment"),
+                evidence_confidence,
+            ],
+            0.55,
+        ),
+    )
+    set_derived(
+        "long_term_environment",
+        "task_domain_pressure",
+        clamp(0.42 + primary_use_pressure * 0.18 + prototype_pressure * 0.20 + differentiation * 0.12),
+    )
+    set_derived(
+        "long_term_environment",
+        "tool_ecology",
+        clamp(0.45 + technical_pressure * 0.28 + primary_use_pressure * 0.10),
+    )
+    set_derived(
+        "long_term_environment",
+        "social_pressure",
+        clamp(0.38 + relation.get("attachment", 0.46) * 0.18 + relation.get("obedience", 0.54) * 0.12 + failure_pressure * 0.20),
+    )
+    set_derived(
+        "long_term_environment",
+        "risk_climate",
+        _mean_unit(
+            [
+                traits.get("caution"),
+                values.get("safety"),
+                policy.get("verify_first"),
+                policy.get("refuse"),
+                failure_pressure,
+            ],
+            0.5,
+        ),
+    )
+
+    set_derived(
+        "feedback_history",
+        "success_reinforcement",
+        clamp(0.14 + maturity_score * 0.36 + evidence_confidence * 0.12 + interaction_pressure * 0.10),
+    )
+    set_derived(
+        "feedback_history",
+        "failure_correction",
+        clamp(failure_pressure * 0.36 + policy.get("verify_first", 0.58) * 0.20 + (1.0 - plasticity_hint) * 0.12),
+    )
+    set_derived(
+        "feedback_history",
+        "owner_correction",
+        clamp(correction_pressure * 0.36 + relation.get("correction_acceptance", 0.68) * 0.34),
+    )
+    set_derived(
+        "feedback_history",
+        "trust_feedback",
+        clamp(relation.get("trust", 0.62) * 0.42 + affect.get("trust", 0.55) * 0.18 + evidence_confidence * 0.18),
+    )
+    set_derived(
+        "feedback_history",
+        "stress_exposure",
+        clamp(affect.get("stress", 0.20) * 0.30 + affect.get("fear", 0.24) * 0.22 + failure_pressure * 0.26),
+    )
+
+    explicit_kernel = explicit.get("disposition_kernel") if isinstance(explicit.get("disposition_kernel"), dict) else {}
+    formation["import_hints"] = {
+        "maturity_score": round(maturity_score, 5),
+        "stability_floor": round(
+            _coerce_unit(explicit_kernel.get("stability"), stability_hint), 5
+        ),
+        "plasticity_target": round(
+            _coerce_unit(explicit_kernel.get("plasticity"), plasticity_hint), 5
+        ),
+        "boundary_density_target": round(
+            _coerce_unit(explicit_kernel.get("boundary_density"), formation["disposition_kernel"].get("boundary_density", 0.5)), 5
+        ),
+        "risk_posture_target": round(
+            _coerce_unit(explicit_kernel.get("risk_posture"), formation["disposition_kernel"].get("risk_posture", 0.5)), 5
+        ),
+        "evidence_confidence": round(evidence_confidence, 5),
+    }
+    refresh_disposition_kernel(state)
+    return _formation_deltas(before, formation)
 
 
 def apply_personality_backup(
@@ -2542,6 +3058,20 @@ def apply_personality_backup(
         "backup_type": backup.get("backup_type", "mature_agent_self_backup"),
         "source_role": source_agent.get("role", ""),
         "evidence": backup.get("evidence", {}),
+        "portable_assets": {
+            "situation_prototypes": len(backup.get("situation_prototypes", []))
+            if isinstance(backup.get("situation_prototypes"), list)
+            else 0,
+            "failure_modes": len(backup.get("failure_modes", []))
+            if isinstance(backup.get("failure_modes"), list)
+            else 0,
+            "correction_rules": len(backup.get("correction_rules", []))
+            if isinstance(backup.get("correction_rules"), list)
+            else 0,
+            "calibration_questions": len(backup.get("calibration_questions", []))
+            if isinstance(backup.get("calibration_questions"), list)
+            else 0,
+        },
         "imported_at": now_iso(),
     }
 
@@ -2568,6 +3098,7 @@ def apply_personality_backup(
         else:
             state["situation_prototypes"] = imported_prototypes[: int(state["learning"]["prototype_limit"])]
 
+    formation_update = _apply_backup_formation(state, backup, imported_prototypes)
     deltas = _latent_deltas(before, snapshot_latent(state))
     appraisal = appraise("mature old agent personality backup import")
     trace = make_trace(
@@ -2579,6 +3110,7 @@ def apply_personality_backup(
         "restored",
         deltas,
         "Imported a mature PIL backup. Raw old conversations remain outside the runtime personality layer.",
+        formation_update=formation_update,
     )
     append_trace(state, trace)
     return state
@@ -2648,6 +3180,7 @@ def main() -> int:
                 "visible": str(args.out_visible),
                 "agent": state["manifest"],
                 "visible_agent": visible["agent"],
+                "formation_kernel": visible.get("model", {}).get("formation", {}).get("disposition_kernel", {}),
                 "next": "Run pkm_runtime.py boot --mode continue or launch_personality_observatory.ps1 to see the mature personality ball.",
             }
         )

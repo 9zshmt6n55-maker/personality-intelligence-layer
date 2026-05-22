@@ -12,6 +12,14 @@ A person may forget many past events, yet still knows how to respond when a simi
 
 PDK applies the same idea to AI agents. Instead of relying on long context forever, it distills interaction history into a persistent layer that guides decisions, communication style, risk handling, behavioral consistency, and future growth.
 
+The current theory is a formation equation:
+
+```text
+initial conditions + long-term environment + feedback history -> behavioral disposition kernel
+```
+
+In other words, PDK is not only a memory mechanism. It is a formation layer: a way to compress lived interaction into a portable, inspectable tendency to judge and act.
+
 中文说明见 [README.zh-CN.md](README.zh-CN.md).
 
 > Note: some files still use the earlier `PIL_*` naming for compatibility. The public concept name is now **PDK: Personality Drive Kernel**.
@@ -50,8 +58,13 @@ PDK is inspired by modern personality psychology and cognitive science, especial
 - **CAPS, the Cognitive-Affective Personality System**: behavior is shaped by situation-sensitive patterns, not only fixed traits.
 - **Appraisal theories of emotion**: emotional response can be modeled as evaluations of novelty, risk, goal relevance, control, and social meaning.
 - **Decision and control theory**: action can be viewed as the result of competing forces, constraints, priorities, and feedback.
+- **Computational personality research**: text and digital behavior can expose stable tendencies, but PDK uses that idea to form an executable kernel rather than only predict a trait score.
+- **Agent memory systems**: reflection, retrieval, and persistence are useful, but PDK keeps factual recall separate from behavior-shaping disposition.
+- **Interoperability protocols**: MCP, A2A, Solid, and DID point toward portable tools, agents, identities, and user-controlled data. PDK adds the missing question: how should behavioral disposition travel between systems?
 
 PDK does not claim to perfectly reproduce human personality. It uses these theories as design scaffolding for an agent kernel: traits, drives, values, emotional baselines, risk sensitivity, boundaries, relationship models, situation prototypes, and correction rules.
+
+For the deeper theory behind this boundary, see [PDK_THEORY.md](PDK_THEORY.md).
 
 ## What Makes It Different
 
@@ -67,12 +80,14 @@ Core advantages:
 - **Old-agent migration**: a mature agent can generate `PIL_PERSONALITY_BACKUP.md`, then a new session can restore that backup into a working profile.
 - **Visible personality state**: the desktop orb and observatory show growth, domains, activity, and changes instead of hiding the model in a black box.
 - **Behavior arbitration**: decisions are influenced by competing signals such as caution, directness, trust, autonomy, curiosity, boundaries, and risk sensitivity.
+- **Formation layer**: the state now tracks initial conditions, long-term environment, feedback history, and the resulting disposition kernel.
 - **Forgetting is intentional**: PDK treats forgetting raw details as a feature. The state should preserve behavioral lessons, not hoard every transcript.
 - **Protocol plus runtime**: if the local Python runtime is available, PDK can write state and show the orb. If not, the Markdown protocol still tells an agent how to restore, back up, and act.
 
 ## What This Repository Contains
 
 - `pkm.py` - personality kernel model, appraisal, policy arbitration, growth updates, visible export.
+- `PDK_THEORY.md` - theory note for the formation equation and interoperability boundary.
 - `pil_profiles.py` - multi-agent profile manager. Each agent has isolated state, visible output, signal file, and metadata.
 - `pkm_runtime.py` - runtime entrypoint for boot, decide, teach, and settle operations.
 - `desktop_orb.py` - transparent desktop personality orb and observatory UI.
@@ -231,6 +246,7 @@ RELEASE_CHECKLIST.md
 This version uses deterministic heuristics for appraisal and policy arbitration. That is intentional. The first target is the architecture:
 
 - personality as adaptive state
+- formation as initial conditions plus environment plus feedback history
 - behavior as policy arbitration
 - growth as visible deformation
 - raw detail as discardable after update

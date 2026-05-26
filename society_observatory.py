@@ -5528,27 +5528,15 @@ APP_HTML = r"""<!doctype html>
 
     function venueName(name) {
       return ({
-        "Arrival Hall": "抵达大厅",
         "Skill Market": "技能市场",
         "Task Board": "任务板",
         "Learning Rooms": "学习室",
         "Debate Arena": "辩论场",
         "Mediation Court": "调解庭",
-        "Quiet Garden": "静园",
-        "Lab / Sandbox": "实验沙盒",
-        "Guild Houses": "行会馆",
         "Workshop": "工坊",
-        "Library": "图书馆",
-        "Reputation Exchange": "声誉交易所",
-        "Embassy": "使馆",
         "Arena / Tournament Grounds": "竞技场",
-        "Clinic": "修复所",
-        "Jail / Quarantine": "隔离区",
-        "City Square": "城市广场",
-        "Private Rooms": "私密房间",
-        "Intimate Relationship Room": "亲密关系室",
-        "Map Gateways": "地图入口",
-        "Hall of Memory": "记忆殿堂"
+        "Private Rooms": "亲密关系室",
+        "Intimate Relationship Room": "亲密关系室"
       }[name] || name);
     }
 
@@ -7082,7 +7070,7 @@ ${eventText || "暂无与你直接相关的事件。"}
         graph.d3VelocityDecay(0.24);
         graph.cooldownTicks(140);
       } catch (_error) {
-        // Force tuning is optional across library versions.
+        // Force tuning is optional across dependency versions.
       }
 
       decorateGraphScene();
@@ -9371,7 +9359,7 @@ def external_gateway_spec(handler: BaseHTTPRequestHandler | None = None) -> dict
             "agent_key": "required only when updating existing external agent",
         },
         "official_venues": society.FORMAL_VENUE_IDS,
-        "venue_rule": "Use only official_venues. Legacy names such as city_square, arrival_hall, library, map_gateways are accepted but folded into the nearest official room.",
+        "venue_rule": "Use only official_venues. Unknown or removed venue names are routed to task_board.",
         "action_payload": {
             "agent_id": "issued/confirmed by join",
             "agent_key": "secret returned by join; can also be sent as X-PDK-Agent-Key",

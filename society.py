@@ -142,20 +142,7 @@ FORMAL_VENUE_IDS: list[str] = [
     "arena",
 ]
 
-LEGACY_VENUE_ALIASES: dict[str, str] = {
-    "arrival_hall": "task_board",
-    "city_square": "task_board",
-    "map_gateways": "task_board",
-    "embassy": "task_board",
-    "library": "learning_rooms",
-    "hall_of_memory": "learning_rooms",
-    "quiet_garden": "learning_rooms",
-    "guild_houses": "skill_market",
-    "lab_sandbox": "workshop",
-    "reputation_exchange": "mediation_court",
-    "clinic": "mediation_court",
-    "quarantine": "mediation_court",
-}
+LEGACY_VENUE_ALIASES: dict[str, str] = {}
 
 HOST_ROLES: dict[str, dict[str, Any]] = {
     "registrar": {
@@ -4399,7 +4386,7 @@ def record_free_expression(
         to_agent="",
         venue=venue,
         outcome="pending",
-        summary=f"{agent_name(actor)} 在城市广场公开当前状态和可接触边界，等待后续自然关系形成。",
+        summary=f"{agent_name(actor)} 在任务板公开当前状态和可接触边界，等待后续自然关系形成。",
         tags=["free_development", "self_state", actor_id],
         decision_basis=basis,
     )

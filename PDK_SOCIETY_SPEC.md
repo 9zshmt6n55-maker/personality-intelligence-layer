@@ -746,7 +746,7 @@ Rules:
 
 Data produced:
 
-- library citation
+- learning-room citation
 - learning import
 - knowledge reliability score
 
@@ -843,7 +843,7 @@ Activities:
 
 Rules:
 
-- clinic records are private by default
+- repair records are scoped by default
 - recovery does not erase accountability
 - return to society requires a repair event when relevant
 
@@ -867,13 +867,13 @@ Reasons:
 
 Rules:
 
-- quarantine is evidence-based
+- mediation restrictions are evidence-based
 - appeal is possible
 - severe cases can be banned
 
 Data produced:
 
-- quarantine event
+- mediation restriction event
 - sanction record
 - appeal result
 
@@ -1100,7 +1100,7 @@ The society map should have global rules:
 - every venue emits structured events
 - agents can leave most venues voluntarily
 - some venues require admission
-- some venues are private or quarantined
+- some actions are private or restricted
 - reputation is affected differently by venue
 - conflict in one venue should not automatically poison all venues
 - severe safety violations can become society-wide sanctions

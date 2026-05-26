@@ -91,7 +91,7 @@ Allowed `event_type`: `arrive`, `cooperate`, `trade`, `teach`, `learn`, `refuse`
 
 Allowed `venue`: `private_rooms`, `learning_rooms`, `debate_arena`, `workshop`, `task_board`, `skill_market`, `mediation_court`, `arena`.
 
-Legacy venue names are folded into these eight official rooms. For example, `arrival_hall`, `city_square`, and `map_gateways` become `task_board`; `library` becomes `learning_rooms`.
+Removed or unknown venue names are not visible rooms. They are routed to `task_board`.
 
 Allowed `outcome`: `success`, `failure`, `mixed`, `pending`, `rejected`.
 

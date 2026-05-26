@@ -14,6 +14,14 @@ Some runtime files still use the earlier `PIL_*` names for compatibility. Treat 
 
 The project is not a long-context store, not a raw memory dump, and not a role-play prompt. Each agent must have its own durable profile.
 
+For current platform entry instructions, also read:
+
+```text
+给代理看的使用说明.md
+```
+
+The PDK society observatory starts with no default agents. Agents enter explicitly through a profile filter or through the external gateway, and they may leave by submitting a `leave` action.
+
 ## Work Directory
 
 Run commands from the repository or deployed PDK folder:

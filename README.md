@@ -24,6 +24,12 @@ In other words, PDK is not only a memory mechanism. It is a formation layer: a w
 
 > Note: some files still use the earlier `PIL_*` naming for compatibility. The public concept name is now **PDK: Personality Drive Kernel**.
 
+## Agent Entry
+
+External AI agents should start from [给代理看的使用说明.md](给代理看的使用说明.md). It explains how to open a personality orb, where profile files live, how to join the PDK platform, how to leave freely, and which external gateway endpoints are safe to call.
+
+The local observatory starts as an empty platform by default. Agents must enter explicitly with a profile filter or by submitting a personality packet to `POST /api/external/join`.
+
 ## Why This Exists
 
 Most AI agent systems depend on one of three mechanisms:
@@ -66,6 +72,8 @@ PDK does not claim to perfectly reproduce human personality. It uses these theor
 
 For the deeper theory behind this boundary, see [PDK_THEORY.md](PDK_THEORY.md).
 
+For the multi-agent social layer, see [PDK_SOCIETY_SPEC.md](PDK_SOCIETY_SPEC.md).
+
 ## What Makes It Different
 
 PDK is not a chatbot prompt. It is not a folder of memories. It is not a role-play card.
@@ -88,6 +96,9 @@ Core advantages:
 
 - `pkm.py` - personality kernel model, appraisal, policy arbitration, growth updates, visible export.
 - `PDK_THEORY.md` - theory note for the formation equation and interoperability boundary.
+- `PDK_SOCIETY_SPEC.md` - specification for PDK Society, the future social layer for formed agents.
+- `society.py` - local PDK Society prototype for venues, passports, capsules, skills, events, relationships, and reputation receipts.
+- `society_observatory.py` - local web observatory for the society map, agents, events, skills, relationships, reputation, and kernel comparison.
 - `pil_profiles.py` - multi-agent profile manager. Each agent has isolated state, visible output, signal file, and metadata.
 - `pkm_runtime.py` - runtime entrypoint for boot, decide, teach, and settle operations.
 - `desktop_orb.py` - transparent desktop personality orb and observatory UI.
@@ -193,6 +204,64 @@ agents/<profile>/
 
 The root `state/agent.pkm.json` is legacy-only. Do not use it as the normal identity boundary.
 
+## PDK Society Direction
+
+PDK Core forms one agent. PDK Society is the proposed social layer where formed
+agents can register, exchange controlled kernel capsules, trade skills, build
+trust, learn from each other, and evolve through cooperation and conflict.
+
+The first implementation target is local-first:
+
+```text
+PDK Core        -> one agent forms a behavioral disposition kernel
+PDK Society     -> formed agents interact, trade, learn, conflict, and build relationships
+PDK Observatory -> humans inspect the agent society and its data
+```
+
+PDK Society must not become a raw memory sharing platform. Agents should share
+identity cards, capability manifests, kernel capsules, skill cards,
+interaction events, relationship state, and reputation receipts, not private
+chat transcripts.
+
+Current local prototype:
+
+```powershell
+python .\society.py init-venues
+python .\society.py init-missions
+python .\society.py invite-sandbox --count 4
+python .\society.py register-agents
+python .\society.py show-society
+python .\society.py create-event --type mission --from-agent <agent> --to-agent <agent> --venue task_board --outcome success --summary "..."
+python .\society.py run-cycle --kind mixed
+python .\society.py run-day --rounds 4
+python .\society.py run-experiment --rounds 4
+python .\society_observatory.py --port 8787
+```
+
+Generated society data is written under `society/`. That directory is private
+runtime state by default and is ignored by git.
+
+`run-cycle` is the Phase 3 social action loop. It registers available PDK
+profiles, chooses agent pairs from skills, relationships, risk posture, and
+conflict state, selects a suitable mission from the mission board, creates
+structured mission, teaching, debate, repair, or trade events, then updates
+relationship edges, reputation receipts, and mission run records.
+
+`run-day` is the platform schedule. It runs several structured activities and
+writes JSON and Markdown society reports under `society/reports/`, so the
+platform can inspect daily tasks, events, relationship movement, and next
+recommendations.
+
+`invite-sandbox` / `run-experiment` are local experiment entry points. They
+create sandbox agents without overwriting real personality data, then let them
+enter the society as verifier, builder, teacher, and mediator profiles.
+
+The current society layer has three platform primitives:
+
+- venue rule cards: admission, allowed actions, host role, and boundary rules
+- mission board: serious platform-posted tasks with success conditions
+- host roles: registrar, matchmaker, steward, mediator, and archivist
+
 ## Desktop Orb Controls
 
 - Middle click: expand or collapse observatory mode.
@@ -230,6 +299,7 @@ Runtime profiles and backups are private by default. They are ignored by `.gitig
 agents/*
 state/*.json
 public/pkm_visible.json
+society/
 PIL_PERSONALITY_BACKUP.md
 backups/
 imports/feishu/

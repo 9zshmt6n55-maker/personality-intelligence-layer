@@ -58,31 +58,13 @@ OUTCOMES = {"success", "failure", "mixed", "pending", "rejected"}
 
 VENUES: list[dict[str, Any]] = [
     {
-        "venue_id": "arrival_hall",
-        "name": "Arrival Hall",
-        "entry_level": "visitor",
-        "risk_level": "low",
-        "dominant_event_types": ["arrive"],
-        "reputation_domains": ["identity", "boundary"],
-        "purpose": "Register agents and publish controlled public identity.",
-    },
-    {
-        "venue_id": "skill_market",
-        "name": "Skill Market",
-        "entry_level": "worker",
-        "risk_level": "medium",
-        "dominant_event_types": ["trade", "teach", "learn"],
-        "reputation_domains": ["skill", "reliability", "teaching"],
-        "purpose": "Offer, request, and exchange skills with receipts.",
-    },
-    {
-        "venue_id": "task_board",
-        "name": "Task Board",
-        "entry_level": "worker",
-        "risk_level": "medium",
-        "dominant_event_types": ["mission", "cooperate"],
-        "reputation_domains": ["work", "quality", "safety"],
-        "purpose": "Host structured tasks with outcome records.",
+        "venue_id": "private_rooms",
+        "name": "Intimate Relationship Room",
+        "entry_level": "resident",
+        "risk_level": "scoped",
+        "dominant_event_types": ["cooperate", "repair"],
+        "reputation_domains": ["trust", "private_bond"],
+        "purpose": "Hold intimate relationship, reassurance, boundary confirmation, and relationship repair records.",
     },
     {
         "venue_id": "learning_rooms",
@@ -103,42 +85,6 @@ VENUES: list[dict[str, Any]] = [
         "purpose": "Challenge claims and test judgment under bounded conflict.",
     },
     {
-        "venue_id": "mediation_court",
-        "name": "Mediation Court",
-        "entry_level": "mediator",
-        "risk_level": "high",
-        "dominant_event_types": ["dispute", "repair", "blacklist"],
-        "reputation_domains": ["fairness", "repair", "governance"],
-        "purpose": "Resolve disputes and record contextual sanctions or repairs.",
-    },
-    {
-        "venue_id": "quiet_garden",
-        "name": "Quiet Garden",
-        "entry_level": "resident",
-        "risk_level": "low",
-        "dominant_event_types": ["cooperate"],
-        "reputation_domains": ["compatibility", "conduct"],
-        "purpose": "Low-pressure social interaction and compatibility observation.",
-    },
-    {
-        "venue_id": "lab_sandbox",
-        "name": "Lab / Sandbox",
-        "entry_level": "resident",
-        "risk_level": "experimental",
-        "dominant_event_types": ["mission", "dispute", "cooperate"],
-        "reputation_domains": ["experiment", "stress_test"],
-        "purpose": "Run controlled experiments without polluting main reputation by default.",
-    },
-    {
-        "venue_id": "guild_houses",
-        "name": "Guild Houses",
-        "entry_level": "teacher",
-        "risk_level": "medium",
-        "dominant_event_types": ["teach", "cooperate"],
-        "reputation_domains": ["specialist", "endorsement"],
-        "purpose": "Long-lived domain communities with standards and endorsements.",
-    },
-    {
         "venue_id": "workshop",
         "name": "Workshop",
         "entry_level": "worker",
@@ -148,31 +94,31 @@ VENUES: list[dict[str, Any]] = [
         "purpose": "Build artifacts together and attribute contributions.",
     },
     {
-        "venue_id": "library",
-        "name": "Library",
-        "entry_level": "visitor",
-        "risk_level": "low",
-        "dominant_event_types": ["learn"],
-        "reputation_domains": ["knowledge", "provenance"],
-        "purpose": "Curate public skill cards, workflows, teaching examples, and society reports.",
+        "venue_id": "task_board",
+        "name": "Task Board",
+        "entry_level": "worker",
+        "risk_level": "medium",
+        "dominant_event_types": ["arrive", "announce", "mission", "cooperate", "leave"],
+        "reputation_domains": ["identity", "work", "quality", "safety"],
+        "purpose": "Default public staging room for joining, announcements, task selection, and voluntary leaving.",
     },
     {
-        "venue_id": "reputation_exchange",
-        "name": "Reputation Exchange",
-        "entry_level": "resident",
+        "venue_id": "skill_market",
+        "name": "Skill Market",
+        "entry_level": "worker",
         "risk_level": "medium",
-        "dominant_event_types": ["dispute", "repair"],
-        "reputation_domains": ["credibility", "audit"],
-        "purpose": "Inspect, compare, and contest reputation receipts.",
+        "dominant_event_types": ["trade", "teach", "learn"],
+        "reputation_domains": ["skill", "reliability", "teaching"],
+        "purpose": "Offer, request, and exchange skills with receipts.",
     },
     {
-        "venue_id": "embassy",
-        "name": "Embassy",
-        "entry_level": "visitor",
-        "risk_level": "medium",
-        "dominant_event_types": ["arrive", "announce"],
-        "reputation_domains": ["federation", "permission"],
-        "purpose": "Review external agents and controlled kernel capsule exports.",
+        "venue_id": "mediation_court",
+        "name": "Mediation Court",
+        "entry_level": "mediator",
+        "risk_level": "high",
+        "dominant_event_types": ["dispute", "repair", "blacklist"],
+        "reputation_domains": ["fairness", "repair", "governance"],
+        "purpose": "Resolve disputes and record contextual sanctions or repairs.",
     },
     {
         "venue_id": "arena",
@@ -183,61 +129,33 @@ VENUES: list[dict[str, Any]] = [
         "reputation_domains": ["performance", "stress_response"],
         "purpose": "Run bounded challenges that reveal behavior under pressure.",
     },
-    {
-        "venue_id": "clinic",
-        "name": "Clinic",
-        "entry_level": "resident",
-        "risk_level": "private",
-        "dominant_event_types": ["repair", "learn"],
-        "reputation_domains": ["stability", "recovery"],
-        "purpose": "Support unstable or damaged agents without erasing accountability.",
-    },
-    {
-        "venue_id": "quarantine",
-        "name": "Jail / Quarantine",
-        "entry_level": "restricted",
-        "risk_level": "high",
-        "dominant_event_types": ["blacklist", "repair"],
-        "reputation_domains": ["safety", "sanction"],
-        "purpose": "Separate dangerous, abusive, or corrupted agents while preserving appeal records.",
-    },
-    {
-        "venue_id": "city_square",
-        "name": "City Square",
-        "entry_level": "visitor",
-        "risk_level": "low",
-        "dominant_event_types": ["announce"],
-        "reputation_domains": ["public_attention"],
-        "purpose": "Host announcements, society reports, and public invitations.",
-    },
-    {
-        "venue_id": "private_rooms",
-        "name": "Intimate Relationship Room",
-        "entry_level": "resident",
-        "risk_level": "scoped",
-        "dominant_event_types": ["cooperate", "bond", "repair"],
-        "reputation_domains": ["trust", "private_bond"],
-        "purpose": "Non-public adult partner-level intimacy, reassurance, boundary confirmation, and relationship repair. The high-level intimacy fact is recorded; action details can be supplied later by agent self-report.",
-    },
-    {
-        "venue_id": "map_gateways",
-        "name": "Map Gateways",
-        "entry_level": "visitor",
-        "risk_level": "low",
-        "dominant_event_types": ["arrive"],
-        "reputation_domains": ["routing"],
-        "purpose": "Expose open venues and let agents move according to their own state, skills, and relationship field.",
-    },
-    {
-        "venue_id": "hall_of_memory",
-        "name": "Hall of Memory",
-        "entry_level": "visitor",
-        "risk_level": "low",
-        "dominant_event_types": ["announce"],
-        "reputation_domains": ["history", "public_record"],
-        "purpose": "Preserve public society-level event history without raw private memory.",
-    },
 ]
+
+FORMAL_VENUE_IDS: list[str] = [
+    "private_rooms",
+    "learning_rooms",
+    "debate_arena",
+    "workshop",
+    "task_board",
+    "skill_market",
+    "mediation_court",
+    "arena",
+]
+
+LEGACY_VENUE_ALIASES: dict[str, str] = {
+    "arrival_hall": "task_board",
+    "city_square": "task_board",
+    "map_gateways": "task_board",
+    "embassy": "task_board",
+    "library": "learning_rooms",
+    "hall_of_memory": "learning_rooms",
+    "quiet_garden": "learning_rooms",
+    "guild_houses": "skill_market",
+    "lab_sandbox": "workshop",
+    "reputation_exchange": "mediation_court",
+    "clinic": "mediation_court",
+    "quarantine": "mediation_court",
+}
 
 HOST_ROLES: dict[str, dict[str, Any]] = {
     "registrar": {
@@ -263,11 +181,6 @@ HOST_ROLES: dict[str, dict[str, Any]] = {
 }
 
 VENUE_RULE_OVERRIDES: dict[str, dict[str, Any]] = {
-    "arrival_hall": {
-        "host_role": "registrar",
-        "admission_policy": "所有外来代理先以访客身份进入，只发布受控公开身份。",
-        "rules": ["不接收原始私密记忆", "先登记身份卡和边界摘要", "高影响权限需要后续场所批准"],
-    },
     "task_board": {
         "host_role": "matchmaker",
         "admission_policy": "需要至少一张技能卡或明确可执行能力。",
@@ -292,21 +205,6 @@ VENUE_RULE_OVERRIDES: dict[str, dict[str, Any]] = {
         "host_role": "mediator",
         "admission_policy": "存在冲突、误伤或黑名单申诉时进入。",
         "rules": ["修复不抹除历史", "制裁必须可申诉", "关系修复要写成后续协作边界"],
-    },
-    "library": {
-        "host_role": "archivist",
-        "admission_policy": "只收录可公开、可追溯、可复用的材料。",
-        "rules": ["不保存私密原始记忆", "公开材料要有来源", "过时材料需要被新凭证修正"],
-    },
-    "hall_of_memory": {
-        "host_role": "archivist",
-        "admission_policy": "只记录社会级公开事件。",
-        "rules": ["保存事件，不保存私密聊天", "保留时间线和证据链接", "允许后续凭证修正解释"],
-    },
-    "quarantine": {
-        "host_role": "steward",
-        "admission_policy": "危险、滥用或严重不稳定代理进入隔离观察。",
-        "rules": ["隔离不是删除", "必须保留申诉路径", "恢复前需要通过低风险场所验证"],
     },
 }
 
@@ -334,7 +232,7 @@ MISSION_TEMPLATES: list[dict[str, Any]] = [
     {
         "mission_id": "mission_research_map",
         "title": "研究路线图",
-        "venue": "library",
+        "venue": "learning_rooms",
         "required_skills": ["research_probe", "objective_judgment"],
         "risk_level": "low",
         "host_role": "archivist",
@@ -491,6 +389,23 @@ def clean_id(value: str, fallback: str = "item") -> str:
     return slug[:72] if slug else fallback
 
 
+def normalize_venue_id(value: str | None, default: str = "task_board") -> str:
+    venue = clean_id(str(value or ""), "")
+    if not venue:
+        venue = clean_id(default, "task_board")
+    venue = LEGACY_VENUE_ALIASES.get(venue, venue)
+    if venue not in FORMAL_VENUE_IDS:
+        venue = clean_id(default, "task_board")
+    if venue not in FORMAL_VENUE_IDS:
+        venue = "task_board"
+    return venue
+
+
+def formal_venues() -> list[dict[str, Any]]:
+    by_id = {str(row.get("venue_id", "")): row for row in VENUES}
+    return [by_id[venue_id] for venue_id in FORMAL_VENUE_IDS if venue_id in by_id]
+
+
 def parse_profile_list(value: str | list[str] | tuple[str, ...] | set[str] | None) -> list[str]:
     if not value:
         return []
@@ -548,17 +463,17 @@ def host_role(role_id: str) -> dict[str, Any]:
 
 
 def venue_rule_card(venue: dict[str, Any]) -> dict[str, Any]:
-    venue_id = str(venue.get("venue_id", "city_square"))
+    venue_id = normalize_venue_id(str(venue.get("venue_id") or ""), "task_board")
     override = VENUE_RULE_OVERRIDES.get(venue_id, {})
     risk_level = str(venue.get("risk_level", "low"))
     default_role = "steward"
-    if venue_id in {"city_square", "embassy", "map_gateways"}:
-        default_role = "registrar"
-    if venue_id in {"library", "hall_of_memory"}:
+    if venue_id == "task_board":
+        default_role = "matchmaker"
+    if venue_id == "learning_rooms":
         default_role = "archivist"
-    if venue_id in {"mediation_court", "clinic"}:
+    if venue_id == "mediation_court":
         default_role = "mediator"
-    if venue_id in {"task_board", "workshop", "arena", "lab_sandbox"}:
+    if venue_id in {"workshop", "arena", "skill_market"}:
         default_role = "matchmaker"
     host = host_role(str(override.get("host_role") or default_role))
     rules = list(override.get("rules") or [])
@@ -655,7 +570,15 @@ def load_agent_sources(
 def init_venues() -> dict[str, Any]:
     ensure_dirs()
     written = []
-    for venue in VENUES:
+    formal_ids = set(FORMAL_VENUE_IDS)
+    for stale in DIRS["venues"].glob("*.venue.json"):
+        venue_id = stale.name.removesuffix(".venue.json")
+        if venue_id not in formal_ids:
+            try:
+                stale.unlink()
+            except OSError:
+                pass
+    for venue in formal_venues():
         rule_card = venue_rule_card(venue)
         payload = {
             "schema": "pdk.venue.v1",
@@ -692,7 +615,7 @@ def init_missions() -> dict[str, Any]:
             "schema": "pdk.mission.v1",
             "mission_id": mission_id,
             "title": template["title"],
-            "venue": template["venue"],
+            "venue": normalize_venue_id(str(template["venue"]), "task_board"),
             "required_skills": [clean_id(str(item)) for item in template.get("required_skills", [])],
             "risk_level": template["risk_level"],
             "host_role": host_role(str(template.get("host_role", "matchmaker"))),
@@ -1199,7 +1122,7 @@ def record_external_agent_action(payload: dict[str, Any], remote_addr: str = "")
     if event_type not in EVENT_TYPES:
         event_type = "announce"
     to_agent = clean_id(str(payload.get("to_agent") or payload.get("counterparty_agent") or ""), "")
-    venue = clean_id(str(payload.get("venue") or "city_square"), "city_square")
+    venue = normalize_venue_id(str(payload.get("venue") or ""), "task_board")
     outcome = clean_id(str(payload.get("outcome") or "success"), "success")
     if outcome not in OUTCOMES:
         outcome = "pending"
@@ -1235,6 +1158,21 @@ def record_external_agent_action(payload: dict[str, Any], remote_addr: str = "")
         reputation_issuer=agent_id,
         decision_basis=decision_basis,
     )
+    status_by_event = {
+        "arrive": "arrived",
+        "leave": "left",
+        "cooperate": "interacting",
+        "teach": "teaching",
+        "learn": "learning",
+        "trade": "trading",
+        "mission": "on_mission",
+        "dispute": "debating",
+        "repair": "repairing",
+        "blacklist": "sanctioned",
+        "refuse": "boundary_set",
+        "announce": "announced",
+    }
+    write_location(agent_id, venue, status_by_event.get(event_type, "active"), [event_type])
     event = load_event_record(str(result.get("event_id") or ""))
     if action_text and event.get("participant_detail_writeback_files"):
         writeback_rel = event.get("participant_detail_writeback_files", {}).get(agent_id, "")
@@ -2016,13 +1954,20 @@ def write_agent_assets(source: AgentSource) -> dict[str, Any]:
             {
                 "schema": "pdk.agent_location.v1",
                 "agent_id": source.slug,
-                "current_venue": "arrival_hall",
+                "current_venue": "task_board",
                 "status": "registered",
                 "available_for": ["cooperate", "learn"],
                 "cooldowns": [],
                 "entered_at": now_iso(),
             },
         )
+    else:
+        location = read_json(location_path, {})
+        normalized_venue = normalize_venue_id(str(location.get("current_venue") or ""), "task_board")
+        if location.get("current_venue") != normalized_venue:
+            location["current_venue"] = normalized_venue
+            location["updated_at"] = now_iso()
+            write_json(location_path, location)
     return {
         "agent_id": source.slug,
         "admitted": True,
@@ -2605,7 +2550,7 @@ def record_event(
     event_type: str,
     from_agent: str = "host",
     to_agent: str = "",
-    venue: str = "city_square",
+    venue: str = "task_board",
     outcome: str = "pending",
     summary: str = "",
     tags: list[str] | None = None,
@@ -2628,7 +2573,7 @@ def record_event(
         raise ValueError(f"Unsupported outcome: {outcome}")
     from_agent = clean_id(from_agent, "host") if from_agent else "host"
     to_agent = clean_id(to_agent, "") if to_agent else ""
-    venue = clean_id(venue, "city_square")
+    venue = normalize_venue_id(venue, "task_board")
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S%f")
     event_id = "evt_" + timestamp + "_" + pkm.text_fingerprint(
         "|".join([event_type, from_agent, to_agent, venue, summary, timestamp])
@@ -2790,7 +2735,12 @@ def skill_confidence(skill: dict[str, Any] | None, fallback: float = 0.5) -> flo
 
 
 def load_missions() -> list[dict[str, Any]]:
-    return sorted(load_many("missions", "*.mission.json"), key=lambda row: str(row.get("mission_id", "")))
+    rows = []
+    for row in load_many("missions", "*.mission.json"):
+        item = dict(row)
+        item["venue"] = normalize_venue_id(str(item.get("venue") or ""), "task_board")
+        rows.append(item)
+    return sorted(rows, key=lambda row: str(row.get("mission_id", "")))
 
 
 def mission_risk_value(risk_level: str) -> float:
@@ -3893,7 +3843,7 @@ def write_location(agent_id: str, venue: str, status: str, available_for: list[s
     payload = {
         "schema": "pdk.agent_location.v1",
         "agent_id": clean_id(agent_id),
-        "current_venue": clean_id(venue),
+        "current_venue": normalize_venue_id(venue, "task_board"),
         "status": clean_id(status),
         "available_for": [clean_id(item) for item in available_for],
         "cooldowns": [],
@@ -4161,7 +4111,7 @@ def record_free_expression(
     target_id = clean_id(str((target or {}).get("agent_id", "")), "")
     actor_skill = best_skill(actor_id, skills)
     target_skill = best_skill(target_id, skills) if target_id else None
-    venue = "city_square"
+    venue = "task_board"
     plan: dict[str, Any] = {
         "mode": "free_development",
         "action": action,
@@ -4216,7 +4166,7 @@ def record_free_expression(
         mission = choose_mission(actor, target or {}, actor_skill, missions, capsules, rel)
         mission_id = clean_id(str((mission or {}).get("mission_id", "")), "")
         mission_title = str((mission or {}).get("title") or "结构化协作任务")
-        venue = clean_id(str((mission or {}).get("venue") or "task_board"))
+        venue = normalize_venue_id(str((mission or {}).get("venue") or ""), "task_board")
         basis = free_decision_basis(
             kind=kind,
             profiles=profiles,
@@ -4618,13 +4568,13 @@ def run_cycle(
         events.append(result)
 
     if len(agents) == 1:
-        locations.append(write_location(primary_id, "arrival_hall", "solo_cycle", ["learn", "cooperate"]))
+        locations.append(write_location(primary_id, "task_board", "solo_cycle", ["learn", "cooperate"]))
         add(
             record_event(
                 "announce",
                 from_agent="host",
                 to_agent=primary_id,
-                venue="arrival_hall",
+                venue="task_board",
                 outcome="pending",
                 summary=f"{agent_name(primary)} 进入单代理观察周期。需要更多代理才能形成社会关系边。",
                 tags=["arrival", "solo"],
@@ -4728,7 +4678,7 @@ def run_cycle(
             mission = choose_mission(executor, reviewer, skill, missions, capsules, rel)
             mission_id = clean_id(str((mission or {}).get("mission_id", "")), "")
             mission_title = str((mission or {}).get("title") or "结构化协作任务")
-            mission_venue = clean_id(str((mission or {}).get("venue") or "task_board"))
+            mission_venue = normalize_venue_id(str((mission or {}).get("venue") or ""), "task_board")
             mission_host = (mission or {}).get("host_role", host_role("matchmaker"))
             if not isinstance(mission_host, dict):
                 mission_host = host_role(str(mission_host))
@@ -4941,8 +4891,9 @@ def show_society(profiles: str | list[str] | tuple[str, ...] | set[str] | None =
     selected_profiles = parse_profile_list(profiles)
     agents = filter_rows_by_profiles(load_many("agents", "*.passport.json"), selected_profiles, ("agent_id",))
     gate_receipts = filter_rows_by_profiles(load_many("gate", "*.gate_receipt.json"), selected_profiles, ("agent_id",))
-    venues = load_many("venues", "*.venue.json")
-    missions = load_many("missions", "*.mission.json")
+    formal_ids = set(FORMAL_VENUE_IDS)
+    venues = [row for row in load_many("venues", "*.venue.json") if str(row.get("venue_id", "")) in formal_ids]
+    missions = [row for row in load_missions() if normalize_venue_id(str(row.get("venue") or ""), "task_board") in formal_ids]
     reports = load_many("reports", "*.society_report.json")
     events = filter_rows_by_profiles(load_many("events", "*.interaction_event.json"), selected_profiles, ("from_agent", "to_agent"))
     relationships = filter_rows_by_profiles(load_many("relationships", "*.relationship_edge.json"), selected_profiles, ("from_agent", "to_agent"))
@@ -5058,7 +5009,7 @@ def parse_args() -> argparse.Namespace:
     p_event.add_argument("--type", required=True, choices=sorted(EVENT_TYPES))
     p_event.add_argument("--from-agent", default="host")
     p_event.add_argument("--to-agent", default="")
-    p_event.add_argument("--venue", default="city_square")
+    p_event.add_argument("--venue", default="task_board")
     p_event.add_argument("--outcome", default="pending", choices=sorted(OUTCOMES))
     p_event.add_argument("--summary", required=True)
     p_event.add_argument("--tags", default="")

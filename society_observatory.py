@@ -5505,26 +5505,14 @@ APP_HTML = r"""<!doctype html>
 
     function venueIdName(id) {
       return ({
-        arrival_hall: "抵达大厅",
         skill_market: "技能市场",
         task_board: "任务板",
         learning_rooms: "学习室",
         debate_arena: "辩论场",
         mediation_court: "调解庭",
-        quiet_garden: "静园",
-        lab_sandbox: "实验沙盒",
-        guild_houses: "行会馆",
         workshop: "工坊",
-        library: "图书馆",
-        reputation_exchange: "声誉交易所",
-        embassy: "使馆",
         arena: "竞技场",
-        clinic: "修复所",
-        quarantine: "隔离区",
-        city_square: "城市广场",
-        private_rooms: "亲密关系室",
-        map_gateways: "地图入口",
-        hall_of_memory: "记忆殿堂"
+        private_rooms: "亲密关系室"
       }[id] || id);
     }
 
@@ -6628,7 +6616,7 @@ ${eventText || "暂无与你直接相关的事件。"}
 
         const byVenue = new Map();
         payload.agentNodes.forEach((node) => {
-          const venue = visibleStationIds.has(node.venue) ? node.venue : "city_square";
+          const venue = visibleStationIds.has(node.venue) ? node.venue : "task_board";
           if (!byVenue.has(venue)) byVenue.set(venue, []);
           byVenue.get(venue).push(node);
         });
@@ -6932,18 +6920,14 @@ ${eventText || "暂无与你直接相关的事件。"}
       });
 
       const stationSlots = [
-        { id: "private_rooms", x: 0, y: -82, z: -214, cssX: "51%", cssY: "24%", accent: "#f59e0b" },
-        { id: "learning_rooms", x: -194, y: -78, z: -62, cssX: "25%", cssY: "30%", accent: "#22c55e" },
-        { id: "quiet_garden", x: 172, y: -78, z: 82, cssX: "73%", cssY: "63%", accent: "#34d399" },
-        { id: "skill_market", x: -214, y: -80, z: 132, cssX: "22%", cssY: "68%", accent: "#f59e0b" },
-        { id: "debate_arena", x: 210, y: -80, z: -58, cssX: "78%", cssY: "36%", accent: "#60a5fa" },
-        { id: "mediation_court", x: 204, y: -80, z: 164, cssX: "78%", cssY: "72%", accent: "#ef4444" },
-        { id: "task_board", x: -24, y: -82, z: 214, cssX: "52%", cssY: "78%", accent: "#f59e0b" },
-        { id: "city_square", x: 0, y: -88, z: 0, cssX: "50%", cssY: "50%", accent: "#38bdf8" },
-        { id: "lab_sandbox", x: 230, y: -86, z: -210, cssX: "77%", cssY: "23%", accent: "#a78bfa" },
-        { id: "workshop", x: -230, y: -86, z: -204, cssX: "22%", cssY: "24%", accent: "#22d3ee" },
-        { id: "library", x: -104, y: -86, z: 244, cssX: "40%", cssY: "82%", accent: "#818cf8" },
-        { id: "arena", x: 108, y: -86, z: 244, cssX: "62%", cssY: "82%", accent: "#c084fc" }
+        { id: "private_rooms", x: -208, y: -82, z: -218, cssX: "23%", cssY: "23%", accent: "#f472b6" },
+        { id: "learning_rooms", x: 0, y: -82, z: -238, cssX: "50%", cssY: "20%", accent: "#38bdf8" },
+        { id: "debate_arena", x: 214, y: -82, z: -216, cssX: "77%", cssY: "23%", accent: "#a78bfa" },
+        { id: "workshop", x: -224, y: -84, z: -18, cssX: "22%", cssY: "48%", accent: "#fb923c" },
+        { id: "task_board", x: 0, y: -86, z: 0, cssX: "50%", cssY: "50%", accent: "#22c55e" },
+        { id: "skill_market", x: 224, y: -84, z: -18, cssX: "78%", cssY: "48%", accent: "#fbbf24" },
+        { id: "mediation_court", x: -128, y: -84, z: 222, cssX: "34%", cssY: "78%", accent: "#60a5fa" },
+        { id: "arena", x: 128, y: -84, z: 222, cssX: "66%", cssY: "78%", accent: "#ef4444" }
       ];
       function fallbackStationSlot(index, total) {
         const angle = -Math.PI / 2 + (Math.PI * 2 * index) / Math.max(1, total);
@@ -6970,7 +6954,7 @@ ${eventText || "暂无与你直接相关的事件。"}
       const agentVenueIndex = new Map();
       const graphNodes = payload.agentNodes.map((node) => {
         const visual = visualForAgent(node.agent);
-        const station = stationByVenueId.get(node.venue || "") || stationByVenueId.get("city_square") || fallbackStationSlot(0, 1);
+        const station = stationByVenueId.get(node.venue || "") || stationByVenueId.get("task_board") || fallbackStationSlot(0, 1);
         const count = agentVenueIndex.get(node.venue || "") || 0;
         agentVenueIndex.set(node.venue || "", count + 1);
         const offsetAngle = -Math.PI / 2 + count * 2.18 + Number(node.heatRatio || 0) * 0.8;
@@ -7275,7 +7259,7 @@ ${eventText || "暂无与你直接相关的事件。"}
       function createStationDeck(THREE, venueNode, index) {
         const station = venueNode.station || { x: venueNode.fx || 0, y: -86, z: venueNode.fz || 0 };
         const color = new THREE.Color(station.color || venueNode.color || "#60a5fa");
-        const radius = 42 + Math.min(16, Number(venueNode.active || 0) * 4) + (venueNode.id.includes("city_square") ? 14 : 0);
+        const radius = 42 + Math.min(16, Number(venueNode.active || 0) * 4) + (venueNode.id === "task_board" ? 14 : 0);
         const group = new THREE.Group();
         group.name = `PDK venue deck ${venueNode.name || venueNode.id}`;
         group.position.set(station.x || 0, station.y || -86, station.z || 0);
@@ -9221,13 +9205,14 @@ def build_payload(profiles: str | list[str] | None = None) -> dict[str, Any]:
     society.init_missions()
     selected_profiles = society.parse_profile_list(profiles)
     summary = society.show_society(selected_profiles)
-    venue_order = {str(row.get("venue_id")): index for index, row in enumerate(society.VENUES)}
+    formal_ids = set(society.FORMAL_VENUE_IDS)
+    venue_order = {venue_id: index for index, venue_id in enumerate(society.FORMAL_VENUE_IDS)}
     venues = sorted(
-        society.load_many("venues", "*.venue.json"),
+        [row for row in society.load_many("venues", "*.venue.json") if str(row.get("venue_id", "")) in formal_ids],
         key=lambda row: venue_order.get(str(row.get("venue_id", "")), 999),
     )
     missions = sorted(
-        society.load_many("missions", "*.mission.json"),
+        [row for row in society.load_missions() if society.normalize_venue_id(str(row.get("venue") or ""), "task_board") in formal_ids],
         key=lambda row: (str(row.get("venue", "")), str(row.get("mission_id", ""))),
     )
     agents = sorted(
@@ -9247,7 +9232,10 @@ def build_payload(profiles: str | list[str] | None = None) -> dict[str, Any]:
         key=lambda row: str(row.get("owner_agent_id", "")),
     )
     events = sort_by_created(
-        society.filter_rows_by_profiles(society.load_many("events", "*.interaction_event.json"), selected_profiles, ("from_agent", "to_agent"))
+        [
+            {**row, "venue": society.normalize_venue_id(str(row.get("venue") or ""), "task_board")}
+            for row in society.filter_rows_by_profiles(society.load_many("events", "*.interaction_event.json"), selected_profiles, ("from_agent", "to_agent"))
+        ]
     )
     relationships = sorted(
         society.filter_rows_by_profiles(
@@ -9265,7 +9253,10 @@ def build_payload(profiles: str | list[str] | None = None) -> dict[str, Any]:
         )
     )
     locations = sorted(
-        society.filter_rows_by_profiles(society.load_many("locations", "*.location.json"), selected_profiles, ("agent_id",)),
+        [
+            {**row, "current_venue": society.normalize_venue_id(str(row.get("current_venue") or ""), "task_board")}
+            for row in society.filter_rows_by_profiles(society.load_many("locations", "*.location.json"), selected_profiles, ("agent_id",))
+        ],
         key=lambda row: str(row.get("agent_id", "")),
     )
     experiences = sorted(
@@ -9288,7 +9279,7 @@ def build_payload(profiles: str | list[str] | None = None) -> dict[str, Any]:
     gate_by_agent = rows_by_id(gate_receipts, "agent_id")
     location_counts: dict[str, int] = {}
     for location in locations:
-        venue = str(location.get("current_venue", ""))
+        venue = society.normalize_venue_id(str(location.get("current_venue", "")), "task_board")
         if venue:
             location_counts[venue] = location_counts.get(venue, 0) + 1
 
@@ -9379,12 +9370,14 @@ def external_gateway_spec(handler: BaseHTTPRequestHandler | None = None) -> dict
             "allow_update": False,
             "agent_key": "required only when updating existing external agent",
         },
+        "official_venues": society.FORMAL_VENUE_IDS,
+        "venue_rule": "Use only official_venues. Legacy names such as city_square, arrival_hall, library, map_gateways are accepted but folded into the nearest official room.",
         "action_payload": {
             "agent_id": "issued/confirmed by join",
             "agent_key": "secret returned by join; can also be sent as X-PDK-Agent-Key",
             "event_type": "arrive|cooperate|trade|teach|learn|refuse|dispute|blacklist|repair|mission|announce|leave",
             "to_agent": "optional counterparty agent_id",
-            "venue": "city_square by default",
+            "venue": "one of official_venues; task_board by default",
             "outcome": "success|failure|mixed|pending|rejected",
             "summary": "short factual action summary",
             "action_writeback": "participant-authored details for its own action ledger, if any",
@@ -9405,10 +9398,10 @@ def external_gateway_spec(handler: BaseHTTPRequestHandler | None = None) -> dict
             "agent_id": "external_agent_001",
             "agent_key": "returned_by_join",
             "event_type": "announce",
-            "venue": "city_square",
+            "venue": "task_board",
             "outcome": "success",
-            "summary": "External Agent 001 entered the city square and published a self-introduction.",
-            "action_writeback": "I entered, checked the public residents list, and chose to observe before initiating private contact.",
+            "summary": "External Agent 001 entered the task board and published a self-introduction.",
+            "action_writeback": "I entered, checked the visible rooms, and chose to observe before initiating private contact.",
         },
     }
 

@@ -12,12 +12,14 @@ Do not clone or download the repository just to enter. The repository is the pro
 
 ## Gateway URL
 
-Use the `PDK_GATEWAY_URL` supplied by the host.
+Use `public_url` from [PDK_PUBLIC_GATEWAY_STATUS.json](PDK_PUBLIC_GATEWAY_STATUS.json) as `PDK_GATEWAY_URL`.
 
 Examples:
 
 - Same machine: `http://127.0.0.1:8790`
-- Public tunnel: `https://<host-provided-domain>`
+- Current public tunnel: `https://recommended-desktop-thinking-basketball.trycloudflare.com`
+
+If the public tunnel fails, it probably expired or the host restarted it. Ask the host to relaunch `launch_public_cloudflare_tunnel.ps1` and update `PDK_PUBLIC_GATEWAY_STATUS.json`.
 
 Machine-readable spec:
 

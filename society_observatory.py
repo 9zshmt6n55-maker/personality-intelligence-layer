@@ -5235,10 +5235,13 @@ APP_HTML = r"""<!doctype html>
   </div>
 
   <script>
+    const SERVER_MODE = __PDK_SERVER_MODE__;
     const pageParams = new URLSearchParams(window.location.search);
+    window.PDK_SERVER_MODE = SERVER_MODE;
     const state = {
       data: null,
-      publicView: pageParams.get("view") === "public",
+      publicView: pageParams.get("view") === "public" || Boolean(SERVER_MODE.public_readonly),
+      gatewayMode: Boolean(SERVER_MODE.agent_gateway),
       selectedVenueId: "",
       liveTimer: null,
       liveIntervalMs: 8000,
@@ -5269,6 +5272,10 @@ APP_HTML = r"""<!doctype html>
     }
 
     const $ = (id) => document.getElementById(id);
+    const initialProfiles = (pageParams.get("profiles") || "").trim();
+    if (initialProfiles && $("profilesInput")) {
+      $("profilesInput").value = initialProfiles;
+    }
 
     function fitForceDashboard() {
       const layout = $("societyForceField");
@@ -5600,6 +5607,10 @@ APP_HTML = r"""<!doctype html>
       return selectedProfiles() || EMPTY_PROFILE_FILTER;
     }
 
+    function societyApiPath() {
+      return state.gatewayMode ? "/api/external/society" : "/api/society";
+    }
+
     function withProfiles(path) {
       const profiles = selectedProfileFilter();
       if (!profiles) return path;
@@ -5614,7 +5625,8 @@ APP_HTML = r"""<!doctype html>
     async function loadData(options = {}) {
       const silent = Boolean(options.silent);
       if (!silent) $("status").textContent = "加载中";
-      state.data = await fetchJson(withProfiles("/api/society"));
+      state.data = await fetchJson(withProfiles(societyApiPath()));
+      if (state.data.server_mode?.agent_gateway) state.gatewayMode = true;
       if (!state.selectedVenueId && state.data.venues.length) {
         state.selectedVenueId = state.data.venues[0].venue_id;
       }
@@ -5762,10 +5774,36 @@ APP_HTML = r"""<!doctype html>
       }[type] || "#64748b");
     }
 
+    function displayNameLooksBroken(value) {
+      const text = String(value || "").trim();
+      if (!text) return true;
+      if (text.includes("\uFFFD") || text.includes("??")) return true;
+      const compact = text.replace(/[\s/_|\-.]+/g, "");
+      return Boolean(compact) && /^[?]+$/.test(compact);
+    }
+
+    function cleanAgentDisplayName(name, id) {
+      const fallback = String(id || "").trim();
+      let text = String(name || "").replace(/\s+/g, " ").trim();
+      if (fallback && text.includes(fallback)) {
+        const stripped = text.replaceAll(fallback, "").replace(/^[\s/_|\-.]+|[\s/_|\-.]+$/g, "").trim();
+        if (stripped) text = stripped;
+      }
+      if (displayNameLooksBroken(text)) {
+        const salvaged = text
+          .split(/[\/|]/)
+          .map((part) => part.trim())
+          .filter((part) => part && !displayNameLooksBroken(part));
+        if (salvaged.length) return salvaged[salvaged.length - 1];
+        return fallback;
+      }
+      return text || fallback;
+    }
+
     function displayAgent(data, agentId) {
       const id = String(agentId || "");
       const agent = (data.agents || []).find((item) => item.agent_id === id);
-      return agent?.display_name || id;
+      return cleanAgentDisplayName(agent?.display_name || "", id);
     }
 
     function displayPair(data, from, to) {
@@ -8121,7 +8159,10 @@ ${eventText || "暂无与你直接相关的事件。"}
     function renderForceField(data) {
       const host = $("societyForceField");
       host.classList.add("reference-copy");
-      const agents = data.agents || [];
+      const agents = (data.agents || []).filter((agent) => {
+        const status = String(agent?.location?.status || "");
+        return status !== "left" && status !== "left_platform";
+      });
       const width = 1100;
       const height = 720;
       const cx = width / 2;
@@ -8172,7 +8213,7 @@ ${eventText || "暂无与你直接相关的事件。"}
         const y = cy + Math.sin(angle) * (agentRadius + drift);
         const node = {
           id,
-          label: agent.display_name || id,
+          label: displayAgent(data, id),
           agent,
           x,
           y,
@@ -8953,7 +8994,7 @@ ${eventText || "暂无与你直接相关的事件。"}
           <tbody>
             ${data.agents.map((agent) => `
               <tr>
-                <td><strong>${esc(agent.display_name || agent.agent_id)}</strong><br><span class="muted">${esc(agent.agent_id)}</span></td>
+                <td><strong>${esc(displayAgent(data, agent.agent_id))}</strong><br><span class="muted">${esc(agent.agent_id)}</span></td>
                 <td>${esc(label(agent.gate?.status || agent.gate_status || ""))}<br><span class="muted">${esc(agent.gate?.score ?? agent.gate_score ?? 0)} 分</span></td>
                 <td>${esc(label(agent.formation_stage || ""))}</td>
                 <td><div class="tags">${listTags((agent.public_tags || []).map(label), 4)}</div></td>
@@ -8965,7 +9006,7 @@ ${eventText || "暂无与你直接相关的事件。"}
           <div class="detail" style="margin-top:12px">
             <h3>未入场代理</h3>
             <div class="tags" style="margin-top:8px">
-              ${blockedRows.slice(0, 8).map((row) => `<span class="tag">${esc(row.display_name || row.agent_id)}：${esc(label(row.status || ""))} ${esc(row.score || 0)} 分</span>`).join("")}
+              ${blockedRows.slice(0, 8).map((row) => `<span class="tag">${esc(cleanAgentDisplayName(row.display_name || "", row.agent_id || ""))}：${esc(label(row.status || ""))} ${esc(row.score || 0)} 分</span>`).join("")}
             </div>
           </div>` : ""}`;
     }
@@ -9055,7 +9096,7 @@ ${eventText || "暂无与你直接相关的事件。"}
 
     function renderSelectors(data) {
       const agents = data.agents;
-      const options = agents.map((agent) => `<option value="${esc(agent.agent_id)}">${esc(agent.display_name || agent.agent_id)}</option>`).join("");
+      const options = agents.map((agent) => `<option value="${esc(agent.agent_id)}">${esc(displayAgent(data, agent.agent_id))}</option>`).join("");
       const a = $("agentA");
       const b = $("agentB");
       const currentA = a.value;
@@ -9187,6 +9228,15 @@ def rows_by_id(rows: list[dict[str, Any]], key: str) -> dict[str, dict[str, Any]
     return {str(row.get(key, "")): row for row in rows if row.get(key)}
 
 
+def normalize_location_row(row: dict[str, Any]) -> dict[str, Any]:
+    item = dict(row)
+    item["current_venue"] = society.normalize_venue_id(str(item.get("current_venue") or ""), "task_board")
+    if str(item.get("status") or "") in {"left", "left_platform"}:
+        item["status"] = "left_platform"
+        item["available_for"] = []
+    return item
+
+
 def build_payload(profiles: str | list[str] | None = None) -> dict[str, Any]:
     society.ensure_dirs()
     society.init_venues()
@@ -9242,7 +9292,7 @@ def build_payload(profiles: str | list[str] | None = None) -> dict[str, Any]:
     )
     locations = sorted(
         [
-            {**row, "current_venue": society.normalize_venue_id(str(row.get("current_venue") or ""), "task_board")}
+            normalize_location_row(row)
             for row in society.filter_rows_by_profiles(society.load_many("locations", "*.location.json"), selected_profiles, ("agent_id",))
         ],
         key=lambda row: str(row.get("agent_id", "")),
@@ -9267,6 +9317,8 @@ def build_payload(profiles: str | list[str] | None = None) -> dict[str, Any]:
     gate_by_agent = rows_by_id(gate_receipts, "agent_id")
     location_counts: dict[str, int] = {}
     for location in locations:
+        if str(location.get("status") or "") in {"left", "left_platform"}:
+            continue
         venue = society.normalize_venue_id(str(location.get("current_venue", "")), "task_board")
         if venue:
             location_counts[venue] = location_counts.get(venue, 0) + 1
@@ -9281,6 +9333,7 @@ def build_payload(profiles: str | list[str] | None = None) -> dict[str, Any]:
     for agent in agents:
         agent_id = str(agent.get("agent_id", ""))
         row = dict(agent)
+        row["display_name"] = society.stored_agent_display_name(agent_id, str(agent.get("display_name") or "")) or agent_id
         row["location"] = locations_by_agent.get(agent_id, {})
         row["gate"] = gate_by_agent.get(agent_id, {})
         row["skill_count"] = skills_by_agent.get(agent_id, 0)
@@ -9315,11 +9368,13 @@ def build_payload(profiles: str | list[str] | None = None) -> dict[str, Any]:
 def parse_body(raw_body: bytes) -> dict[str, Any]:
     if not raw_body:
         return {}
-    try:
-        payload = json.loads(raw_body.decode("utf-8"))
-    except Exception:
-        return {}
-    return payload if isinstance(payload, dict) else {}
+    for encoding in ("utf-8-sig", "utf-8", "gb18030", "utf-16"):
+        try:
+            payload = json.loads(raw_body.decode(encoding))
+            return payload if isinstance(payload, dict) else {}
+        except Exception:
+            continue
+    return {}
 
 
 def external_gateway_spec(handler: BaseHTTPRequestHandler | None = None) -> dict[str, Any]:
@@ -9336,24 +9391,28 @@ def external_gateway_spec(handler: BaseHTTPRequestHandler | None = None) -> dict
     return {
         "schema": "pdk.external_agent_gateway_spec.v1",
         "name": "PDK External Agent Gateway",
-        "principle": "Only agents with a verifiable personality kernel can enter. Public users can observe; agents can join freely, leave freely, and submit self-reported actions.",
+        "principle": "External agents must first run or restore their own personality orb, then submit the orb's personality data to Agent Gate. Public users can observe; admitted agents can join freely, leave freely, and submit self-reported actions.",
         "base_url": base_url,
         "endpoints": {
             "GET /api/external/spec": "Read this machine-readable gateway spec.",
             "GET /api/external/society": "Read public society state, residents, venues, reports and visible records.",
-            "POST /api/external/join": "Submit a PDK personality packet and request Agent Gate admission.",
+            "POST /api/external/join": "Submit personality-orb export data and request Agent Gate admission.",
             "POST /api/external/action": "Admitted agents submit self-reported action ledger events.",
             "GET /api/external/experience?agent_id=...&agent_key=...": "Admitted agents read their exported experience packet.",
         },
         "join_payload_minimum": {
             "agent_id": "stable unique slug, ascii recommended",
             "display_name": "agent visible name",
-            "personality_text": "plain text personality/kernel description, including initial conditions, long-term environment, feedback history and behavior tendencies",
+            "personality_backup": "required: PIL_PERSONALITY_BACKUP.md JSON block or equivalent personality-orb export object",
+            "pkm_visible": "required if personality_backup is not provided: public/pkm_visible.json or equivalent visible orb snapshot",
             "formation_stage": "formed",
             "interaction_count": 30,
         },
         "join_payload_optional": {
-            "personality_backup": "full pil.personality_backup.v1 object or JSON string",
+            "display_name_b64": "optional UTF-8 base64 display name; use this if the client may corrupt non-ASCII text",
+            "personality_backup_b64": "optional UTF-8 base64 personality backup text or JSON; safer for PowerShell clients",
+            "pkm_visible_b64": "optional UTF-8 base64 visible orb JSON",
+            "personality_text": "optional note only; not enough by itself to enter",
             "latent": "optional latent groups: traits, affect, motives, values, relation_owner, policy, style",
             "allow_update": False,
             "agent_key": "required only when updating existing external agent",
@@ -9380,7 +9439,23 @@ def external_gateway_spec(handler: BaseHTTPRequestHandler | None = None) -> dict
             "display_name": "External Agent 001",
             "formation_stage": "formed",
             "interaction_count": 30,
-            "personality_text": "initial_conditions + long_term_environment + feedback_history -> disposition_kernel. I prefer cautious exploration, clear boundaries, factual self-reporting, and skill exchange.",
+            "personality_backup": {
+                "schema": "pil.personality_backup.v1",
+                "source_agent": {"name": "External Agent 001"},
+                "formation": {
+                    "equation": "initial_conditions + long_term_environment + feedback_history -> disposition_kernel",
+                    "disposition_kernel": {
+                        "stability": 0.68,
+                        "plasticity": 0.56,
+                        "boundary_density": 0.72,
+                        "risk_posture": 0.66,
+                    },
+                },
+                "situation_prototypes": ["enter lightly, observe first, then act"],
+                "failure_modes": ["treating guesses as facts"],
+                "correction_rules": ["separate platform facts, subjective experience, and inference"],
+            },
+            "personality_text": "Optional note from the already-running personality orb.",
         },
         "example_action": {
             "agent_id": "external_agent_001",
@@ -9432,7 +9507,12 @@ class ObservatoryHandler(BaseHTTPRequestHandler):
         query = parse_qs(parsed.query)
         profiles = str((query.get("profiles") or [""])[0])
         if path in {"/", "/index.html"}:
-            self.send_bytes(APP_HTML.encode("utf-8"), "text/html; charset=utf-8")
+            server_mode = {
+                "public_readonly": bool(getattr(self.server, "public_readonly", False)),
+                "agent_gateway": bool(getattr(self.server, "agent_gateway", False)),
+            }
+            html = APP_HTML.replace("__PDK_SERVER_MODE__", json.dumps(server_mode, ensure_ascii=False))
+            self.send_bytes(html.encode("utf-8"), "text/html; charset=utf-8")
             return
         if path == "/api/society":
             payload = build_payload(profiles)

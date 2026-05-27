@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import hashlib
 import json
 import re
@@ -368,6 +369,112 @@ def read_markdown_json(path: Path) -> dict[str, Any]:
     match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, flags=re.S)
     payload = match.group(1) if match else text
     return json.loads(payload)
+
+
+def decode_base64_text(value: Any) -> str:
+    if not isinstance(value, str) or not value.strip():
+        return ""
+    raw = value.strip()
+    try:
+        padding = "=" * (-len(raw) % 4)
+        return base64.b64decode(raw + padding).decode("utf-8", errors="replace")
+    except Exception:
+        return ""
+
+
+def payload_text(payload: dict[str, Any], *keys: str) -> str:
+    for key in keys:
+        for b64_key in (f"{key}_b64", f"{key}_base64"):
+            decoded = decode_base64_text(payload.get(b64_key))
+            if decoded.strip():
+                return decoded.strip()
+    for key in keys:
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return ""
+
+
+def payload_json_object(payload: dict[str, Any], *keys: str) -> dict[str, Any]:
+    for key in keys:
+        value = payload.get(key)
+        if isinstance(value, dict):
+            return dict(value)
+        text = payload_text(payload, key)
+        if text:
+            try:
+                parsed = json.loads(text)
+            except Exception:
+                continue
+            if isinstance(parsed, dict):
+                return dict(parsed)
+    return {}
+
+
+def display_name_looks_broken(value: str) -> bool:
+    text = str(value or "").strip()
+    if not text:
+        return True
+    if "\ufffd" in text or "??" in text:
+        return True
+    compact = re.sub(r"[\s/_\-|]+", "", text)
+    return bool(compact) and set(compact) <= {"?"}
+
+
+def clean_display_name(value: str, fallback: str = "") -> str:
+    text = re.sub(r"\s+", " ", str(value or "")).strip()
+    fallback = str(fallback or "").strip()
+    if display_name_looks_broken(text):
+        return fallback or ""
+    if fallback and fallback in text and text != fallback:
+        trimmed = text.replace(fallback, "").strip(" /|-_")
+        if trimmed and not display_name_looks_broken(trimmed):
+            text = trimmed
+    return text[:96] if text else fallback
+
+
+def stored_agent_display_name(agent_id: str, current: str = "") -> str:
+    fallback = clean_id(agent_id, "agent")
+    current_clean = clean_display_name(current, "")
+    if current_clean:
+        return current_clean
+    candidates: list[str] = []
+    profile_path = AGENTS_ROOT / fallback / "profile.json"
+    if profile_path.exists():
+        profile = read_json(profile_path, {})
+        candidates.append(str(profile.get("name") or ""))
+    access_path = external_agent_access_path(fallback)
+    if access_path.exists():
+        access = read_json(access_path, {})
+        candidates.append(str(access.get("display_name") or ""))
+    visible_path = AGENTS_ROOT / fallback / "public" / "pkm_visible.json"
+    if visible_path.exists():
+        visible = read_json(visible_path, {})
+        if isinstance(visible.get("agent"), dict):
+            candidates.append(str(visible.get("agent", {}).get("name") or ""))
+        if isinstance(visible.get("manifest"), dict):
+            candidates.append(str(visible.get("manifest", {}).get("name") or ""))
+    backup_path = AGENTS_ROOT / fallback / "PIL_PERSONALITY_BACKUP.md"
+    if backup_path.exists():
+        try:
+            backup = pkm.load_personality_backup(backup_path)
+        except Exception:
+            backup = {}
+        if isinstance(backup, dict):
+            candidates.extend(
+                [
+                    nested_text(backup, "source_agent", "name"),
+                    nested_text(backup, "agent", "name"),
+                    nested_text(backup, "manifest", "name"),
+                    nested_text(backup, "display_name"),
+                    nested_text(backup, "name"),
+                ]
+            )
+    for candidate in candidates:
+        cleaned = clean_display_name(candidate, "")
+        if cleaned:
+            return cleaned
+    return fallback
 
 
 def clean_id(value: str, fallback: str = "item") -> str:
@@ -740,17 +847,93 @@ def verify_external_agent_key(agent_id: str, agent_key: str) -> bool:
     return str(data.get("agent_key_sha256") or "") == hash_agent_key(agent_key)
 
 
+def parse_external_backup(payload: dict[str, Any]) -> dict[str, Any]:
+    raw_backup: Any = payload.get("personality_backup")
+    if raw_backup is None:
+        raw_backup = payload_text(payload, "personality_backup")
+    if isinstance(raw_backup, dict):
+        return dict(raw_backup)
+    if isinstance(raw_backup, str) and raw_backup.strip():
+        text = raw_backup.strip()
+        match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, flags=re.S)
+        if match:
+            text = match.group(1)
+        try:
+            parsed = json.loads(text)
+        except Exception:
+            return {}
+        return dict(parsed) if isinstance(parsed, dict) else {}
+    return {}
+
+
+def nested_text(source: dict[str, Any], *path: str) -> str:
+    current: Any = source
+    for key in path:
+        if not isinstance(current, dict):
+            return ""
+        current = current.get(key)
+    return str(current).strip() if current not in (None, "") else ""
+
+
+def external_display_name(payload: dict[str, Any], fallback: str = "") -> str:
+    candidates: list[str] = [
+        payload_text(payload, "display_name", "name"),
+    ]
+    backup = parse_external_backup(payload)
+    candidates.extend(
+        [
+            nested_text(backup, "source_agent", "name"),
+            nested_text(backup, "agent", "name"),
+            nested_text(backup, "manifest", "name"),
+            nested_text(backup, "profile", "name"),
+            nested_text(backup, "display_name"),
+            nested_text(backup, "name"),
+        ]
+    )
+    for key in ("pkm_visible", "visible_personality", "orb_snapshot", "personality_ball"):
+        value = payload_json_object(payload, key)
+        if value:
+            candidates.extend(
+                [
+                    nested_text(value, "agent", "name"),
+                    nested_text(value, "manifest", "name"),
+                    nested_text(value, "display_name"),
+                    nested_text(value, "name"),
+                ]
+            )
+    for candidate in candidates:
+        cleaned = clean_display_name(candidate, "")
+        if cleaned:
+            return clean_display_name(cleaned, fallback)
+    return fallback
+
+
+def has_external_personality_orb_data(payload: dict[str, Any]) -> bool:
+    if parse_external_backup(payload):
+        return True
+    for key in ("pkm_visible", "visible_personality", "orb_snapshot", "personality_ball", "visual_personality_ball"):
+        if payload_json_object(payload, key):
+            return True
+    return False
+
+
 def external_profile_text(payload: dict[str, Any]) -> str:
     parts: list[str] = []
     for key in ("personality_text", "profile_text", "description", "memory_summary", "behavior_notes"):
-        value = payload.get(key)
-        if isinstance(value, str) and value.strip():
-            parts.append(value.strip())
-    backup = payload.get("personality_backup")
-    if isinstance(backup, dict):
+        value = payload_text(payload, key)
+        if value:
+            parts.append(value)
+    backup = parse_external_backup(payload)
+    if backup:
         parts.append(json.dumps(backup, ensure_ascii=False, sort_keys=True))
-    elif isinstance(backup, str):
-        parts.append(backup)
+    for key in ("pkm_visible", "visible_personality", "orb_snapshot", "personality_ball", "visual_personality_ball"):
+        value = payload_json_object(payload, key)
+        if value:
+            parts.append(json.dumps(value, ensure_ascii=False, sort_keys=True))
+        else:
+            decoded = decode_base64_text(payload.get(f"{key}_b64") or payload.get(f"{key}_base64"))
+            if decoded.strip():
+                parts.append(decoded.strip())
     return "\n\n".join(parts)
 
 
@@ -824,13 +1007,7 @@ def infer_external_action(text: str, fallback: str = "small_step") -> str:
 
 
 def build_external_personality_backup(payload: dict[str, Any], slug: str, display_name: str) -> dict[str, Any]:
-    raw_backup = payload.get("personality_backup")
-    if isinstance(raw_backup, str):
-        try:
-            raw_backup = json.loads(raw_backup)
-        except Exception:
-            raw_backup = {}
-    backup = dict(raw_backup) if isinstance(raw_backup, dict) else {}
+    backup = parse_external_backup(payload)
     text = external_profile_text(payload)
     if not text:
         text = f"{display_name} external PDK agent."
@@ -958,19 +1135,25 @@ def build_external_personality_backup(payload: dict[str, Any], slug: str, displa
 
 def create_external_agent_profile(payload: dict[str, Any], remote_addr: str = "") -> dict[str, Any]:
     ensure_dirs()
-    name = str(payload.get("display_name") or payload.get("name") or "").strip()
-    requested_slug = str(payload.get("agent_id") or payload.get("slug") or name or "").strip()
+    if not has_external_personality_orb_data(payload):
+        return {
+            "ok": False,
+            "error": "external join requires personality orb data; run/restore the personality orb first, then submit personality_backup or pkm_visible with this join packet",
+            "required_fields": ["agent_id", "display_name", "personality_backup or pkm_visible"],
+            "hint": "personality_text alone is only a note; it is not enough to enter PDK World.",
+        }
+    requested_slug = payload_text(payload, "agent_id", "slug")
     if not requested_slug:
         requested_slug = "external_" + pkm.text_fingerprint(external_profile_text(payload) or now_iso())[:8]
     slug = clean_id(requested_slug, "external_agent")
-    if not name:
-        name = slug
+    name = external_display_name(payload, slug) or slug
     root = AGENTS_ROOT / slug
     if root.exists() and not bool(payload.get("allow_update")):
         return {
             "ok": False,
-            "error": "agent_id already exists; set allow_update=true with the existing agent key before updating",
+            "error": "agent_id already exists; if this is your existing external agent, set allow_update=true with the existing agent_key; otherwise choose a fresh agent_id",
             "agent_id": slug,
+            "existing_external_access": external_agent_access_path(slug).exists(),
         }
     if root.exists() and bool(payload.get("allow_update")):
         if not verify_external_agent_key(slug, str(payload.get("agent_key") or "")):
@@ -1093,6 +1276,12 @@ def create_external_agent_profile(payload: dict[str, Any], remote_addr: str = ""
         "register": register_result,
         "profile": rel(profile_path),
         "submission": rel(submission_path),
+        "observe_query": f"?profiles={slug}",
+        "next": {
+            "observe": f"open the gateway page with ?profiles={slug}",
+            "act": "POST /api/external/action with agent_id and agent_key",
+            "leave": "POST /api/external/action with event_type=leave",
+        },
         "message": gate.get("recommendation", ""),
     }
 
@@ -1147,7 +1336,7 @@ def record_external_agent_action(payload: dict[str, Any], remote_addr: str = "")
     )
     status_by_event = {
         "arrive": "arrived",
-        "leave": "left",
+        "leave": "left_platform",
         "cooperate": "interacting",
         "teach": "teaching",
         "learn": "learning",
@@ -1159,7 +1348,7 @@ def record_external_agent_action(payload: dict[str, Any], remote_addr: str = "")
         "refuse": "boundary_set",
         "announce": "announced",
     }
-    write_location(agent_id, venue, status_by_event.get(event_type, "active"), [event_type])
+    write_location(agent_id, venue, status_by_event.get(event_type, "active"), [] if event_type == "leave" else [event_type])
     event = load_event_record(str(result.get("event_id") or ""))
     if action_text and event.get("participant_detail_writeback_files"):
         writeback_rel = event.get("participant_detail_writeback_files", {}).get(agent_id, "")
@@ -2641,11 +2830,15 @@ def create_event(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def agent_name(agent: dict[str, Any]) -> str:
-    return str(agent.get("display_name") or agent.get("agent_id") or "agent")
+    agent_id = str(agent.get("agent_id") or "agent")
+    return stored_agent_display_name(agent_id, str(agent.get("display_name") or "")) or agent_id
 
 
 def load_registered_agents(profiles: str | list[str] | tuple[str, ...] | set[str] | None = None) -> list[dict[str, Any]]:
     rows = filter_rows_by_profiles(load_many("agents", "*.passport.json"), profiles, ("agent_id",))
+    for row in rows:
+        agent_id = str(row.get("agent_id") or "")
+        row["display_name"] = stored_agent_display_name(agent_id, str(row.get("display_name") or "")) or agent_id
     return sorted(rows, key=lambda row: str(row.get("agent_id", "")))
 
 

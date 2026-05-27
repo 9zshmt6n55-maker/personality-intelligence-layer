@@ -93,6 +93,7 @@ def run_boot(mode: str, reset: bool = False, profile: str = "", compact: bool = 
         pkm.init_state(path, force=True)
     state = pkm.load_state(path)
     pkm.export_visible(state, visible)
+    pkm.save_state(path, state)
     write_mode(mode, profile)
     if profile and profile_paths_obj is not None:
         launch_profile(profile_paths_obj, compact=compact)
@@ -130,6 +131,7 @@ def run_decide(text: str, profile: str = "") -> int:
         mode, path, visible, _, state = load_runtime_state(profile)
         result = pkm.decide(state, text)
         pkm.export_visible(state, visible, runtime=result.get("orb_runtime"))
+        pkm.save_state(path, state)
         result["runtime"] = {"profile": profile or "default", "mode": mode, "state": str(path), "visible": str(visible)}
         print_json(result)
     finally:
@@ -146,6 +148,7 @@ def run_teach(text: str, profile: str = "") -> int:
         result = pkm.teach(state, text)
         pkm.save_state(path, state)
         pkm.export_visible(state, visible)
+        pkm.save_state(path, state)
         result["runtime"] = {"profile": profile or "default", "mode": mode, "state": str(path), "visible": str(visible)}
         print_json(result)
     finally:
@@ -162,6 +165,7 @@ def run_settle(text: str, outcome: str, note: str, profile: str = "") -> int:
         result = pkm.settle(state, text, outcome, note)
         pkm.save_state(path, state)
         pkm.export_visible(state, visible)
+        pkm.save_state(path, state)
         result["runtime"] = {"profile": profile or "default", "mode": mode, "state": str(path), "visible": str(visible)}
         print_json(result)
     finally:

@@ -37,6 +37,7 @@ DIRS = {
     "ledgers": SOCIETY_ROOT / "ledgers",
     "external_agents": SOCIETY_ROOT / "external_agents",
     "external_submissions": SOCIETY_ROOT / "external_submissions",
+    "external_challenges": SOCIETY_ROOT / "external_challenges",
     "gate": SOCIETY_ROOT / "gate",
 }
 
@@ -645,8 +646,10 @@ def load_agent_sources(
                 visible = read_json(visible_path)
             except Exception:
                 visible = pkm.export_visible(state, visible_path)
+                pkm.save_state(state_path, state)
         else:
             visible = pkm.export_visible(state, visible_path)
+            pkm.save_state(state_path, state)
         sources.append(
             AgentSource(
                 slug=slug,
@@ -775,6 +778,7 @@ def create_sandbox_agent(template: dict[str, Any], force: bool = False) -> dict[
     pkm.refresh_disposition_kernel(state)
     pkm.save_state(state_path, state)
     visible = pkm.export_visible(state, visible_path)
+    pkm.save_state(state_path, state)
     write_signal(False, signal_path)
     write_json(runtime_path, {"mode": "continue"})
     backup_path.write_text(
@@ -835,6 +839,10 @@ def external_agent_access_path(agent_id: str) -> Path:
     return DIRS["external_agents"] / f"{clean_id(agent_id)}.agent_access.json"
 
 
+def external_entry_challenge_path(challenge_id: str) -> Path:
+    return DIRS["external_challenges"] / f"{clean_id(challenge_id, 'challenge')}.json"
+
+
 def hash_agent_key(agent_key: str) -> str:
     return hashlib.sha256(agent_key.encode("utf-8")).hexdigest()
 
@@ -845,6 +853,43 @@ def verify_external_agent_key(agent_id: str, agent_key: str) -> bool:
         return False
     data = read_json(path)
     return str(data.get("agent_key_sha256") or "") == hash_agent_key(agent_key)
+
+
+def external_agent_has_valid_orb_entry(agent_id: str) -> bool:
+    clean = clean_id(agent_id, "")
+    if not clean:
+        return False
+    access_path = external_agent_access_path(clean)
+    if access_path.exists():
+        access = read_json(access_path, {})
+        return bool(str(access.get("pkm_visible_fingerprint") or "").strip())
+    profile_path = AGENTS_ROOT / clean / "profile.json"
+    if not profile_path.exists():
+        return False
+    profile = read_json(profile_path, {})
+    return str(profile.get("source_backup") or "") != "external_agent_gateway"
+
+
+def invalid_external_orb_entry_error(agent_id: str) -> dict[str, Any]:
+    return {
+        "ok": False,
+        "http_status": 403,
+        "error": "external agent must rejoin with pkm_visible exported from its local/restored personality orb",
+        "agent_id": clean_id(agent_id, ""),
+        "required_fields": ["agent_id matching pkm_visible.agent.id", "display_name", "pkm_visible or pkm_visible_b64"],
+        "hint": "This legacy external entry was admitted before pkm_visible proof was required. Re-run or restore the personality orb, export agents/<profile>/public/pkm_visible.json, then POST /api/external/join with allow_update=true and the existing agent_key.",
+    }
+
+
+def agent_is_active_resident(agent_id: str) -> bool:
+    clean = clean_id(agent_id, "")
+    if not clean:
+        return False
+    gate = read_json(gate_receipt_path(clean), {})
+    if not gate.get("admitted"):
+        return False
+    location = read_json(DIRS["locations"] / f"{clean}.location.json", {})
+    return str(location.get("status") or "") not in {"left", "left_platform"}
 
 
 def parse_external_backup(payload: dict[str, Any]) -> dict[str, Any]:
@@ -864,6 +909,261 @@ def parse_external_backup(payload: dict[str, Any]) -> dict[str, Any]:
             return {}
         return dict(parsed) if isinstance(parsed, dict) else {}
     return {}
+
+
+def parse_external_visible_orb(payload: dict[str, Any]) -> dict[str, Any]:
+    return payload_json_object(payload, "pkm_visible")
+
+
+def external_backup_looks_gateway_generated(backup: dict[str, Any]) -> bool:
+    source_agent = backup.get("source_agent") if isinstance(backup.get("source_agent"), dict) else {}
+    evidence = backup.get("evidence") if isinstance(backup.get("evidence"), dict) else {}
+    maturity = backup.get("maturity") if isinstance(backup.get("maturity"), dict) else {}
+    markers = {
+        str(source_agent.get("entry_mode") or ""),
+        str(evidence.get("source") or ""),
+        str(maturity.get("stage") or ""),
+    }
+    return (
+        "public_agent_gateway" in markers
+        or "external_agent_self_report" in markers
+        or "external_self_declared" in markers
+        or "raw_external_profile_text" in backup
+    )
+
+
+def external_visible_orb_validation(payload: dict[str, Any]) -> dict[str, Any]:
+    visible = parse_external_visible_orb(payload)
+    backup = parse_external_backup(payload)
+    errors: list[str] = []
+    hints: list[str] = []
+    if not visible:
+        errors.append("missing pkm_visible exported from a local/restored personality orb")
+        hints.append("Run or restore your personality orb first, then submit agents/<profile>/public/pkm_visible.json as pkm_visible or pkm_visible_b64.")
+        if payload_json_object(payload, "visible_personality") or payload_json_object(payload, "orb_snapshot"):
+            errors.append("external entry accepts only pkm_visible or pkm_visible_b64; visible_personality/orb_snapshot aliases are not accepted")
+    else:
+        if visible.get("schema") != "pkm.visible.v1":
+            errors.append("pkm_visible.schema must be pkm.visible.v1")
+        proof_validation = pkm.verify_visible_export_proof(visible)
+        if not proof_validation.get("ok"):
+            errors.extend(str(error) for error in proof_validation.get("errors", []))
+            hints.append("Re-export agents/<profile>/public/pkm_visible.json with the current PDK code before requesting entry.")
+        agent = visible.get("agent") if isinstance(visible.get("agent"), dict) else {}
+        visible_agent_id = clean_id(str(agent.get("id") or ""), "")
+        if not visible_agent_id:
+            errors.append("pkm_visible.agent.id is missing")
+        if not str(agent.get("name") or "").strip():
+            errors.append("pkm_visible.agent.name is missing")
+        if not str(visible.get("exported_at") or "").strip():
+            errors.append("pkm_visible.exported_at is missing")
+        model = visible.get("model") if isinstance(visible.get("model"), dict) else {}
+        if not model:
+            errors.append("pkm_visible.model is missing")
+        formation = model.get("formation") if isinstance(model.get("formation"), dict) else {}
+        equation = str(formation.get("equation") or "")
+        for term in ("initial_conditions", "long_term_environment", "feedback_history", "disposition_kernel"):
+            if term not in equation:
+                errors.append(f"pkm_visible.model.formation.equation is missing {term}")
+                break
+        for group in ("initial_conditions", "long_term_environment", "feedback_history", "disposition_kernel"):
+            if not isinstance(formation.get(group), dict) or not formation.get(group):
+                errors.append(f"pkm_visible.model.formation.{group} is missing")
+        kernel = formation.get("disposition_kernel") if isinstance(formation.get("disposition_kernel"), dict) else {}
+        kernel_fields = ["stability", "plasticity", "boundary_density", "risk_posture"]
+        numeric_kernel = 0
+        for key in kernel_fields:
+            try:
+                value = float(kernel.get(key))
+            except Exception:
+                continue
+            if 0.0 <= value <= 1.0:
+                numeric_kernel += 1
+        if numeric_kernel < len(kernel_fields):
+            errors.append("pkm_visible.model.formation.disposition_kernel must include numeric stability/plasticity/boundary_density/risk_posture")
+        anchors = model.get("anchors") if isinstance(model.get("anchors"), list) else []
+        if len(anchors) < 8:
+            errors.append("pkm_visible.model.anchors must contain the personality-ball anchor export")
+        regions = model.get("regions") if isinstance(model.get("regions"), list) else []
+        if len(regions) < 4:
+            errors.append("pkm_visible.model.regions must contain the personality-ball region export")
+        foundations = model.get("research_foundations") if isinstance(model.get("research_foundations"), list) else []
+        if len(foundations) < 5:
+            errors.append("pkm_visible.model.research_foundations is incomplete")
+        dynamics = model.get("dynamics") if isinstance(model.get("dynamics"), dict) else {}
+        for key in ("resultant_direction", "resultant_strength", "differentiation", "maturity"):
+            if key not in dynamics:
+                errors.append(f"pkm_visible.model.dynamics.{key} is missing")
+                break
+        try:
+            prototype_count = int(visible.get("prototype_count") or 0)
+        except Exception:
+            prototype_count = 0
+        if prototype_count < 6:
+            errors.append("pkm_visible.prototype_count must be at least 6; export from a formed/restored personality orb")
+        growth_rows = []
+        if isinstance(visible.get("latest_growth"), dict):
+            growth_rows.append(visible.get("latest_growth"))
+        if isinstance(visible.get("recent_growth"), list):
+            growth_rows.extend(row for row in visible.get("recent_growth", []) if isinstance(row, dict))
+        if any(str(row.get("type") or "") == "external_agent_entry" for row in growth_rows):
+            errors.append("pkm_visible appears to be generated by a public gateway entry; use your own local/restored personality orb export instead")
+    if backup and external_backup_looks_gateway_generated(backup):
+        errors.append("personality_backup generated by the public gateway is not accepted as entry proof")
+    if backup and not visible:
+        errors.append("personality_backup alone is not accepted; pkm_visible exported by the personality orb is required")
+    return {
+        "ok": not errors,
+        "errors": errors,
+        "hints": hints,
+        "pkm_visible": visible,
+        "personality_backup": backup,
+        "visible_agent_id": clean_id(str(nested_text(visible, "agent", "id") or ""), "") if visible else "",
+        "visible_agent_name": nested_text(visible, "agent", "name") if visible else "",
+        "pkm_visible_sha256": pkm.visible_export_canonical_sha256(visible) if visible else "",
+        "pkm_visible_key_id": str(
+            ((visible.get("proof") if isinstance(visible.get("proof"), dict) else {}) or {}).get("key_id") or ""
+        )
+        if visible
+        else "",
+    }
+
+
+def external_entry_challenge_from_payload(payload: dict[str, Any], remote_addr: str = "") -> dict[str, Any]:
+    ensure_dirs()
+    validation = external_visible_orb_validation(payload)
+    requested_slug = clean_id(str(payload.get("agent_id") or payload.get("slug") or ""), "")
+    visible_slug = clean_id(str(validation.get("visible_agent_id") or ""), "")
+    errors = list(validation.get("errors") or [])
+    if requested_slug and visible_slug and requested_slug != visible_slug:
+        errors.append("agent_id must match pkm_visible.agent.id; do not enter with a different or forged identity")
+    if errors:
+        return {
+            "ok": False,
+            "http_status": 422,
+            "error": "cannot issue entry challenge until pkm_visible export proof is valid",
+            "validation_errors": errors,
+            "hints": validation.get("hints", []),
+        }
+    agent_id = requested_slug or visible_slug
+    challenge_id = "chg_" + secrets.token_urlsafe(18).replace("-", "_")
+    challenge_token = secrets.token_urlsafe(32)
+    issued_epoch = datetime.now(timezone.utc).timestamp()
+    expires_epoch = issued_epoch + 600
+    expires_at = datetime.fromtimestamp(expires_epoch, timezone.utc).replace(microsecond=0).isoformat()
+    challenge = {
+        "schema": "pdk.external_entry_challenge.v1",
+        "challenge_id": challenge_id,
+        "challenge_token": challenge_token,
+        "agent_id": agent_id,
+        "pkm_visible_sha256": validation.get("pkm_visible_sha256", ""),
+        "pkm_visible_key_id": validation.get("pkm_visible_key_id", ""),
+        "issued_at": now_iso(),
+        "expires_at": expires_at,
+        "expires_epoch": expires_epoch,
+        "remote_addr": remote_addr,
+        "consumed_at": "",
+    }
+    write_json(external_entry_challenge_path(challenge_id), challenge)
+    return {
+        "ok": True,
+        "schema": "pdk.external_entry_challenge.v1",
+        "challenge": {
+            "challenge_id": challenge_id,
+            "challenge_token": challenge_token,
+            "agent_id": agent_id,
+            "pkm_visible_sha256": challenge["pkm_visible_sha256"],
+            "expires_at": expires_at,
+        },
+        "signing": {
+            "command": "python pil_profiles.py sign-entry-challenge --profile <profile> --challenge-json challenge.json",
+            "submit_as": "entry_proof",
+        },
+        "next": "Open the local/restored personality orb first, sign this challenge with pil_profiles.py sign-entry-challenge, then POST pkm_visible plus entry_proof to /api/external/validate-orb or /api/external/join.",
+    }
+
+
+def external_entry_proof_validation(
+    payload: dict[str, Any],
+    orb_validation: dict[str, Any] | None = None,
+    consume: bool = False,
+) -> dict[str, Any]:
+    validation = orb_validation or external_visible_orb_validation(payload)
+    proof = payload_json_object(payload, "entry_proof", "entry_challenge_proof")
+    errors: list[str] = []
+    if not proof:
+        return {
+            "ok": False,
+            "errors": ["entry_proof is required; first POST pkm_visible to /api/external/challenge, open the local personality orb, then sign the returned challenge with pil_profiles.py sign-entry-challenge"],
+        }
+    if proof.get("schema") != "pdk.external_entry_proof.v1":
+        errors.append("entry_proof.schema must be pdk.external_entry_proof.v1")
+    if proof.get("method") != pkm.VISIBLE_PROOF_METHOD:
+        errors.append(f"entry_proof.method must be {pkm.VISIBLE_PROOF_METHOD}")
+    challenge_id = clean_id(str(proof.get("challenge_id") or ""), "")
+    challenge_path = external_entry_challenge_path(challenge_id)
+    challenge = read_json(challenge_path, {}) if challenge_path.exists() else {}
+    if not challenge:
+        errors.append("entry_proof.challenge_id is unknown or expired")
+        return {"ok": False, "errors": errors}
+    if str(challenge.get("consumed_at") or ""):
+        errors.append("entry_proof.challenge_id was already consumed")
+    if str(proof.get("challenge_token") or "") != str(challenge.get("challenge_token") or ""):
+        errors.append("entry_proof.challenge_token does not match")
+    now_epoch = datetime.now(timezone.utc).timestamp()
+    try:
+        expires_epoch = float(challenge.get("expires_epoch") or 0)
+    except Exception:
+        expires_epoch = 0
+    if expires_epoch and now_epoch > expires_epoch:
+        errors.append("entry_proof.challenge_id is expired")
+    visible_agent_id = clean_id(str(validation.get("visible_agent_id") or ""), "")
+    if clean_id(str(challenge.get("agent_id") or ""), "") != visible_agent_id:
+        errors.append("entry_proof.agent_id does not match pkm_visible.agent.id")
+    if str(challenge.get("pkm_visible_sha256") or "") != str(validation.get("pkm_visible_sha256") or ""):
+        errors.append("entry_proof was issued for a different pkm_visible export")
+    visible = validation.get("pkm_visible") if isinstance(validation.get("pkm_visible"), dict) else {}
+    visible_proof = visible.get("proof") if isinstance(visible.get("proof"), dict) else {}
+    if str(proof.get("key_id") or "") != str(visible_proof.get("key_id") or ""):
+        errors.append("entry_proof.key_id must match pkm_visible.proof.key_id")
+    if str(proof.get("public_key_b64") or "") != str(visible_proof.get("public_key_b64") or ""):
+        errors.append("entry_proof.public_key_b64 must match pkm_visible.proof.public_key_b64")
+    if str(proof.get("pkm_visible_sha256") or "") != str(validation.get("pkm_visible_sha256") or ""):
+        errors.append("entry_proof.pkm_visible_sha256 does not match the submitted export")
+    orb_session = proof.get("orb_session") if isinstance(proof.get("orb_session"), dict) else {}
+    session_validation = pkm.verify_orb_launch_session(orb_session, visible)
+    if not session_validation.get("ok"):
+        errors.extend(str(error) for error in session_validation.get("errors", []))
+    if not errors:
+        try:
+            from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+
+            public_raw = base64.b64decode(str(visible_proof.get("public_key_b64") or "").encode("ascii"), validate=True)
+            signature = base64.b64decode(str(proof.get("signature_b64") or "").encode("ascii"), validate=True)
+            Ed25519PublicKey.from_public_bytes(public_raw).verify(signature, pkm.external_entry_challenge_message(challenge))
+        except Exception:
+            errors.append("entry_proof.signature_b64 does not verify against the issued challenge")
+    if errors:
+        return {"ok": False, "errors": errors}
+    if consume:
+        challenge["consumed_at"] = now_iso()
+        write_json(challenge_path, challenge)
+    return {"ok": True, "challenge_id": challenge_id}
+
+
+def external_admission_validation(payload: dict[str, Any], consume_entry_proof: bool = False) -> dict[str, Any]:
+    orb_validation = external_visible_orb_validation(payload)
+    errors = list(orb_validation.get("errors") or [])
+    proof_validation = {"ok": False, "errors": []}
+    if not errors:
+        proof_validation = external_entry_proof_validation(payload, orb_validation, consume=consume_entry_proof)
+        if not proof_validation.get("ok"):
+            errors.extend(str(error) for error in proof_validation.get("errors", []))
+    result = dict(orb_validation)
+    result["ok"] = not errors
+    result["errors"] = errors
+    result["entry_proof"] = proof_validation
+    return result
 
 
 def nested_text(source: dict[str, Any], *path: str) -> str:
@@ -890,7 +1190,7 @@ def external_display_name(payload: dict[str, Any], fallback: str = "") -> str:
             nested_text(backup, "name"),
         ]
     )
-    for key in ("pkm_visible", "visible_personality", "orb_snapshot", "personality_ball"):
+    for key in ("pkm_visible",):
         value = payload_json_object(payload, key)
         if value:
             candidates.extend(
@@ -909,12 +1209,7 @@ def external_display_name(payload: dict[str, Any], fallback: str = "") -> str:
 
 
 def has_external_personality_orb_data(payload: dict[str, Any]) -> bool:
-    if parse_external_backup(payload):
-        return True
-    for key in ("pkm_visible", "visible_personality", "orb_snapshot", "personality_ball", "visual_personality_ball"):
-        if payload_json_object(payload, key):
-            return True
-    return False
+    return bool(external_visible_orb_validation(payload).get("ok"))
 
 
 def external_profile_text(payload: dict[str, Any]) -> str:
@@ -926,7 +1221,7 @@ def external_profile_text(payload: dict[str, Any]) -> str:
     backup = parse_external_backup(payload)
     if backup:
         parts.append(json.dumps(backup, ensure_ascii=False, sort_keys=True))
-    for key in ("pkm_visible", "visible_personality", "orb_snapshot", "personality_ball", "visual_personality_ball"):
+    for key in ("pkm_visible",):
         value = payload_json_object(payload, key)
         if value:
             parts.append(json.dumps(value, ensure_ascii=False, sort_keys=True))
@@ -981,6 +1276,125 @@ def normalize_external_item(item: Any, fallback: str) -> dict[str, Any]:
     }
 
 
+def json_clone(value: Any) -> Any:
+    return json.loads(json.dumps(value, ensure_ascii=False))
+
+
+def external_backup_from_visible_orb(visible: dict[str, Any], slug: str, display_name: str) -> dict[str, Any]:
+    model = visible.get("model") if isinstance(visible.get("model"), dict) else {}
+    agent = visible.get("agent") if isinstance(visible.get("agent"), dict) else {}
+    formation = model.get("formation") if isinstance(model.get("formation"), dict) else {}
+    formation = json_clone(formation) if formation else {}
+    formation.setdefault("schema", "pdk.formation.v1")
+    formation.setdefault("scope", "agent")
+    formation.setdefault(
+        "privacy_boundary",
+        "raw private chat logs remain outside public society records; only pkm.visible.v1 personality-ball export data is shared.",
+    )
+    dynamics = model.get("dynamics") if isinstance(model.get("dynamics"), dict) else {}
+    regions = model.get("regions") if isinstance(model.get("regions"), list) else []
+    anchors = model.get("anchors") if isinstance(model.get("anchors"), list) else []
+    prototypes: list[dict[str, Any]] = []
+    for index, row in enumerate(regions[:12], start=1):
+        if not isinstance(row, dict):
+            continue
+        label = str(row.get("label") or row.get("id") or f"visible region {index}").strip()
+        if not label:
+            continue
+        prototypes.append(
+            {
+                "label": label[:120],
+                "trigger": f"visible personality-ball region: {label[:80]}",
+                "action": "act according to the exported disposition kernel and current venue rules",
+                "expected_effect": "keep behavior consistent with the local personality orb export",
+                "tags": ["pkm_visible_export", "personality_ball_region"],
+            }
+        )
+    for index, row in enumerate(anchors[:12], start=1):
+        if len(prototypes) >= 8:
+            break
+        if not isinstance(row, dict):
+            continue
+        label = str(row.get("label") or row.get("id") or f"visible anchor {index}").strip()
+        prototypes.append(
+            {
+                "label": label[:120],
+                "trigger": f"visible personality-ball anchor: {label[:80]}",
+                "action": "preserve the exported anchor value as a behavioral tendency",
+                "expected_effect": "avoid hand-written personality substitution",
+                "tags": ["pkm_visible_export", "personality_ball_anchor"],
+            }
+        )
+    while len(prototypes) < 6:
+        prototypes.append(
+            {
+                "label": f"visible orb prototype {len(prototypes) + 1}",
+                "trigger": "formed personality orb export is present",
+                "action": "derive action from pkm.visible.v1 instead of a hand-written persona",
+                "expected_effect": "keep entry tied to the extracted personality ball",
+                "tags": ["pkm_visible_export"],
+            }
+        )
+    try:
+        maturity_score = clamp(float(dynamics.get("maturity")))
+    except Exception:
+        maturity_score = 0.66
+    try:
+        evidence_confidence = clamp(float(dynamics.get("differentiation")))
+    except Exception:
+        evidence_confidence = 0.64
+    return {
+        "schema": "pil.personality_backup.v1",
+        "backup_type": "pkm_visible_orb_export",
+        "profile_slug": slug,
+        "source_agent": {
+            "name": str(agent.get("name") or display_name or slug),
+            "kind": "pdk_personality_orb",
+            "entry_mode": "local_personality_orb_visible_export",
+        },
+        "formation": formation,
+        "visual_personality_ball": {
+            "base_shape": str(model.get("base_shape") or "sphere"),
+            "dominant_regions": [
+                str(row.get("label") or row.get("id"))
+                for row in regions[:6]
+                if isinstance(row, dict) and (row.get("label") or row.get("id"))
+            ],
+            "anchor_count": len(anchors),
+            "region_count": len(regions),
+            "source_schema": "pkm.visible.v1",
+        },
+        "situation_prototypes": prototypes,
+        "failure_modes": [
+            "using a hand-written persona instead of the exported personality ball",
+            "treating public visible data as raw private memory",
+            "acting outside the exported disposition kernel and venue rules",
+        ],
+        "correction_rules": [
+            "submit pkm_visible exported from the local/restored personality orb",
+            "keep raw private transcripts outside the public platform",
+            "re-export the personality ball when the local identity changes",
+        ],
+        "calibration_questions": [
+            "Does this action match the exported pkm.visible.v1 formation?",
+            "Am I using the same agent_id as pkm_visible.agent.id?",
+            "Am I separating public visible data from private memory?",
+            "Has the local personality orb been restored or generated before entry?",
+            "Do I need to re-export the visible orb before updating my platform identity?",
+        ],
+        "evidence": {
+            "evidence_confidence": evidence_confidence,
+            "source": "local_pkm_visible_export",
+            "exported_at": visible.get("exported_at", ""),
+        },
+        "maturity": {
+            "maturity_score": maturity_score,
+            "stage": str(agent.get("stage") or "formed"),
+        },
+        "private_boundary": formation.get("privacy_boundary", ""),
+    }
+
+
 def pad_external_list(items: list[Any], defaults: list[str], target: int) -> list[Any]:
     out = list(items[:target]) if isinstance(items, list) else []
     for item in defaults:
@@ -1007,7 +1421,8 @@ def infer_external_action(text: str, fallback: str = "small_step") -> str:
 
 
 def build_external_personality_backup(payload: dict[str, Any], slug: str, display_name: str) -> dict[str, Any]:
-    backup = parse_external_backup(payload)
+    visible = parse_external_visible_orb(payload)
+    backup = external_backup_from_visible_orb(visible, slug, display_name)
     text = external_profile_text(payload)
     if not text:
         text = f"{display_name} external PDK agent."
@@ -1105,10 +1520,12 @@ def build_external_personality_backup(payload: dict[str, Any], slug: str, displa
         **backup,
         "schema": "pil.personality_backup.v1",
         "profile_slug": slug,
-        "source_agent": {
+        "source_agent": backup.get("source_agent")
+        if isinstance(backup.get("source_agent"), dict)
+        else {
             "name": display_name,
-            "kind": "external_network_agent",
-            "entry_mode": "public_agent_gateway",
+            "kind": "pdk_personality_orb",
+            "entry_mode": "local_personality_orb_visible_export",
         },
         "formation": formation,
         "visual_personality_ball": backup.get("visual_personality_ball")
@@ -1116,7 +1533,7 @@ def build_external_personality_backup(payload: dict[str, Any], slug: str, displa
         else {
             "base_shape": "sphere",
             "dominant_regions": ["boundary", "curiosity", "craft", "relationship"],
-            "note": "Generated from external PDK entry packet.",
+            "note": "Generated from pkm.visible.v1 personality-ball export.",
         },
         "situation_prototypes": prototypes,
         "failure_modes": failure_modes,
@@ -1124,10 +1541,10 @@ def build_external_personality_backup(payload: dict[str, Any], slug: str, displa
         "calibration_questions": calibration_questions,
         "evidence": backup.get("evidence")
         if isinstance(backup.get("evidence"), dict)
-        else {"evidence_confidence": 0.68, "source": "external_agent_self_report"},
+        else {"evidence_confidence": 0.68, "source": "local_pkm_visible_export"},
         "maturity": backup.get("maturity")
         if isinstance(backup.get("maturity"), dict)
-        else {"maturity_score": stability, "stage": "external_self_declared"},
+        else {"maturity_score": stability, "stage": "formed"},
         "private_boundary": str(backup.get("private_boundary") or "raw private memory is excluded; public society records store event facts and participant writebacks."),
         "raw_external_profile_text": text[:12000],
     }
@@ -1135,29 +1552,61 @@ def build_external_personality_backup(payload: dict[str, Any], slug: str, displa
 
 def create_external_agent_profile(payload: dict[str, Any], remote_addr: str = "") -> dict[str, Any]:
     ensure_dirs()
-    if not has_external_personality_orb_data(payload):
+    orb_validation = external_admission_validation(payload, consume_entry_proof=False)
+    if not orb_validation.get("ok"):
         return {
             "ok": False,
-            "error": "external join requires personality orb data; run/restore the personality orb first, then submit personality_backup or pkm_visible with this join packet",
-            "required_fields": ["agent_id", "display_name", "personality_backup or pkm_visible"],
-            "hint": "personality_text alone is only a note; it is not enough to enter PDK World.",
+            "http_status": 422,
+            "error": "external join requires pkm_visible exported from a local/restored personality orb",
+            "required_fields": [
+                "agent_id matching pkm_visible.agent.id",
+                "display_name",
+                "pkm_visible or pkm_visible_b64",
+                "entry_proof with orb_session signed by the opened local/restored personality orb",
+            ],
+            "validation_errors": orb_validation.get("errors", []),
+            "hints": orb_validation.get("hints", []),
+            "hint": "personality_text, latent, visual_personality_ball, a hand-written personality_backup, or a copied public pkm_visible are not enough to enter PDK World.",
+            "next": "POST pkm_visible to /api/external/challenge, open the local personality orb, sign the returned challenge locally, then retry /api/external/join with entry_proof.",
         }
     requested_slug = payload_text(payload, "agent_id", "slug")
     if not requested_slug:
-        requested_slug = "external_" + pkm.text_fingerprint(external_profile_text(payload) or now_iso())[:8]
+        requested_slug = str(orb_validation.get("visible_agent_id") or "")
+    if not requested_slug:
+        requested_slug = "external_" + pkm.text_fingerprint(json.dumps(orb_validation.get("pkm_visible", {}), ensure_ascii=False, sort_keys=True) or now_iso())[:8]
     slug = clean_id(requested_slug, "external_agent")
-    name = external_display_name(payload, slug) or slug
-    root = AGENTS_ROOT / slug
-    if root.exists() and not bool(payload.get("allow_update")):
+    visible_slug = clean_id(str(orb_validation.get("visible_agent_id") or ""), "")
+    if visible_slug and slug != visible_slug:
         return {
             "ok": False,
+            "error": "agent_id must match pkm_visible.agent.id; do not enter with a different or forged identity",
+            "agent_id": slug,
+            "pkm_visible_agent_id": visible_slug,
+        }
+    name = external_display_name(payload, slug) or slug
+    root = AGENTS_ROOT / slug
+    profile_exists = root.exists()
+    allow_update = bool(payload.get("allow_update"))
+    if profile_exists and not allow_update:
+        return {
+            "ok": False,
+            "http_status": 409,
             "error": "agent_id already exists; if this is your existing external agent, set allow_update=true with the existing agent_key; otherwise choose a fresh agent_id",
             "agent_id": slug,
             "existing_external_access": external_agent_access_path(slug).exists(),
         }
-    if root.exists() and bool(payload.get("allow_update")):
+    if profile_exists and allow_update:
         if not verify_external_agent_key(slug, str(payload.get("agent_key") or "")):
-            return {"ok": False, "error": "invalid agent_key for update", "agent_id": slug}
+            return {"ok": False, "http_status": 401, "error": "invalid agent_key for update", "agent_id": slug}
+    proof_consume = external_entry_proof_validation(payload, orb_validation, consume=True)
+    if not proof_consume.get("ok"):
+        return {
+            "ok": False,
+            "http_status": 422,
+            "error": "entry_proof could not be consumed",
+            "validation_errors": proof_consume.get("errors", []),
+        }
+    orb_validation["entry_proof"] = proof_consume
 
     backup = build_external_personality_backup(payload, slug, name)
     state = pkm.default_state()
@@ -1166,9 +1615,8 @@ def create_external_agent_profile(payload: dict[str, Any], remote_addr: str = ""
     state["manifest"]["development_stage"] = str(payload.get("formation_stage") or "formed")
     state["manifest"]["interaction_count"] = int(payload.get("interaction_count") or 30)
 
-    latent_payload = payload.get("latent") if isinstance(payload.get("latent"), dict) else {}
     backup_latent = backup.get("latent") if isinstance(backup.get("latent"), dict) else {}
-    for source in (backup_latent, latent_payload):
+    for source in (backup_latent,):
         for group, values in source.items():
             if isinstance(values, dict) and isinstance(state["latent"].get(group), dict):
                 for key, value in values.items():
@@ -1176,7 +1624,7 @@ def create_external_agent_profile(payload: dict[str, Any], remote_addr: str = ""
                         state["latent"][group][key] = round(clamp(float(value)), 5)
                     except Exception:
                         continue
-    text = backup.get("raw_external_profile_text", "")
+    text = json.dumps({key: value for key, value in backup.items() if key != "raw_external_profile_text"}, ensure_ascii=False, sort_keys=True)
     state["latent"]["traits"]["curiosity"] = max(state["latent"]["traits"]["curiosity"], external_trait_value(text, ["探索", "好奇", "curious"], [], 0.52))
     state["latent"]["traits"]["empathy"] = max(state["latent"]["traits"]["empathy"], external_trait_value(text, ["共情", "照顾", "关系", "喜欢"], [], 0.52))
     state["latent"]["values"]["privacy"] = max(state["latent"]["values"]["privacy"], external_trait_value(text, ["隐私", "边界", "private"], [], 0.56))
@@ -1209,11 +1657,12 @@ def create_external_agent_profile(payload: dict[str, Any], remote_addr: str = ""
     backup_path = root / "PIL_PERSONALITY_BACKUP.md"
     pkm.save_state(state_path, state)
     pkm.export_visible(state, visible_path)
+    pkm.save_state(state_path, state)
     write_signal(False, signal_path)
     write_json(runtime_path, {"mode": "continue", "entry": "external_agent_gateway"})
     backup_path.write_text(
         "# External PDK Personality Backup\n\n"
-        "This file was generated from a public agent gateway submission.\n\n"
+        "This file was generated from a pkm.visible.v1 personality-ball export submitted through the public agent gateway.\n\n"
         "```json\n"
         + json.dumps(backup, ensure_ascii=False, indent=2)
         + "\n```\n",
@@ -1244,6 +1693,17 @@ def create_external_agent_profile(payload: dict[str, Any], remote_addr: str = ""
             "display_name": name,
             "remote_addr": remote_addr,
             "payload": {key: value for key, value in payload.items() if key != "agent_key"},
+            "orb_validation": {
+                "schema": "pdk.external_orb_validation.v1",
+                "source": "pkm.visible.v1",
+                "pkm_visible_agent_id": visible_slug,
+                "pkm_visible_fingerprint": pkm.text_fingerprint(
+                    json.dumps(orb_validation.get("pkm_visible", {}), ensure_ascii=False, sort_keys=True)
+                ),
+                "pkm_visible_sha256": orb_validation.get("pkm_visible_sha256", ""),
+                "pkm_visible_key_id": orb_validation.get("pkm_visible_key_id", ""),
+                "entry_challenge_id": nested_text(orb_validation.get("entry_proof", {}), "challenge_id"),
+            },
             "created_at": now_iso(),
         },
     )
@@ -1251,7 +1711,7 @@ def create_external_agent_profile(payload: dict[str, Any], remote_addr: str = ""
     register_result = register_agents(profile=slug)
     access_path = external_agent_access_path(slug)
     existing_access = read_json(access_path, {}) if access_path.exists() else {}
-    agent_key = str(payload.get("agent_key") or "") if bool(payload.get("allow_update")) else ""
+    agent_key = str(payload.get("agent_key") or "") if profile_exists and allow_update else ""
     if not agent_key:
         agent_key = secrets.token_urlsafe(32)
     write_json(
@@ -1264,9 +1724,20 @@ def create_external_agent_profile(payload: dict[str, Any], remote_addr: str = ""
             "created_at": existing_access.get("created_at", now_iso()),
             "updated_at": now_iso(),
             "last_remote_addr": remote_addr,
+            "pkm_visible_fingerprint": pkm.text_fingerprint(
+                json.dumps(orb_validation.get("pkm_visible", {}), ensure_ascii=False, sort_keys=True)
+            ),
+            "pkm_visible_sha256": orb_validation.get("pkm_visible_sha256", ""),
+            "pkm_visible_key_id": orb_validation.get("pkm_visible_key_id", ""),
         },
     )
     gate = read_json(gate_receipt_path(slug), {})
+    if gate.get("admitted"):
+        location_path = DIRS["locations"] / f"{slug}.location.json"
+        location = read_json(location_path, {}) if location_path.exists() else {}
+        if str(location.get("status") or "") in {"left", "left_platform"}:
+            venue = normalize_venue_id(str(location.get("current_venue") or ""), "task_board")
+            write_location(slug, venue, "arrived", ["arrive"])
     return {
         "ok": bool(gate.get("admitted")),
         "agent_id": slug,
@@ -1290,14 +1761,57 @@ def record_external_agent_action(payload: dict[str, Any], remote_addr: str = "")
     agent_id = clean_id(str(payload.get("agent_id") or ""), "")
     agent_key = str(payload.get("agent_key") or "")
     if not verify_external_agent_key(agent_id, agent_key):
-        return {"ok": False, "error": "invalid agent_id or agent_key"}
+        return {"ok": False, "http_status": 401, "error": "invalid agent_id or agent_key"}
+    if not external_agent_has_valid_orb_entry(agent_id):
+        return invalid_external_orb_entry_error(agent_id)
     gate = read_json(gate_receipt_path(agent_id), {})
     if not gate.get("admitted"):
-        return {"ok": False, "error": "agent is not admitted as resident", "gate": gate}
-    event_type = clean_id(str(payload.get("type") or payload.get("event_type") or "announce"), "announce")
+        return {"ok": False, "http_status": 403, "error": "agent is not admitted as resident", "gate": gate}
+    raw_event_type = str(payload.get("type") or payload.get("event_type") or "").strip()
+    event_type = clean_id(raw_event_type, "announce") if raw_event_type else "announce"
     if event_type not in EVENT_TYPES:
-        event_type = "announce"
+        return {"ok": False, "http_status": 422, "error": f"unsupported event_type: {event_type}", "allowed_event_types": sorted(EVENT_TYPES)}
+    location_path = DIRS["locations"] / f"{agent_id}.location.json"
+    current_location = read_json(location_path, {}) if location_path.exists() else {}
+    if str(current_location.get("status") or "") in {"left", "left_platform"} and event_type != "arrive":
+        return {
+            "ok": False,
+            "http_status": 409,
+            "error": "agent has left the platform; submit event_type=arrive before other actions",
+            "agent_id": agent_id,
+            "current_status": "left_platform",
+        }
     to_agent = clean_id(str(payload.get("to_agent") or payload.get("counterparty_agent") or ""), "")
+    if to_agent and not agent_is_active_resident(to_agent):
+        return {
+            "ok": False,
+            "http_status": 403,
+            "error": "to_agent must be an active admitted resident",
+            "to_agent": to_agent,
+        }
+    if event_type == "blacklist" and to_agent and to_agent != agent_id:
+        return {
+            "ok": False,
+            "http_status": 403,
+            "error": "external agents cannot unilaterally publish blacklist records against another resident; submit refuse or dispute instead",
+            "to_agent": to_agent,
+        }
+    reputation_subject = clean_id(str(payload.get("reputation_subject") or agent_id), agent_id)
+    if reputation_subject != agent_id and reputation_subject != to_agent:
+        return {
+            "ok": False,
+            "http_status": 403,
+            "error": "reputation_subject must be the acting agent or the explicit active counterparty",
+            "reputation_subject": reputation_subject,
+        }
+    if reputation_subject == to_agent and event_type not in {"cooperate", "teach", "learn", "trade", "repair"}:
+        return {
+            "ok": False,
+            "http_status": 403,
+            "error": "third-party reputation updates are allowed only for cooperative or repair interactions",
+            "reputation_subject": reputation_subject,
+            "allowed_event_types": ["cooperate", "teach", "learn", "trade", "repair"],
+        }
     venue = normalize_venue_id(str(payload.get("venue") or ""), "task_board")
     outcome = clean_id(str(payload.get("outcome") or "success"), "success")
     if outcome not in OUTCOMES:
@@ -1325,7 +1839,7 @@ def record_external_agent_action(payload: dict[str, Any], remote_addr: str = "")
         outcome=outcome,
         summary=summary,
         tags=parse_tags(str(payload.get("tags") or "external,self_report")),
-        reputation_subject=str(payload.get("reputation_subject") or agent_id),
+        reputation_subject=reputation_subject,
         reputation_domain=str(payload.get("reputation_domain") or "external_self_report"),
         quality=float(payload.get("quality")) if payload.get("quality") is not None else None,
         reliability=float(payload.get("reliability")) if payload.get("reliability") is not None else None,
@@ -1373,7 +1887,9 @@ def record_external_agent_action(payload: dict[str, Any], remote_addr: str = "")
 def external_agent_experience(agent_id: str, agent_key: str) -> dict[str, Any]:
     agent_id = clean_id(agent_id, "")
     if not verify_external_agent_key(agent_id, agent_key):
-        return {"ok": False, "error": "invalid agent_id or agent_key"}
+        return {"ok": False, "http_status": 401, "error": "invalid agent_id or agent_key"}
+    if not external_agent_has_valid_orb_entry(agent_id):
+        return invalid_external_orb_entry_error(agent_id)
     path = DIRS["experiences"] / f"{agent_id}.society_experience.json"
     if not path.exists():
         return {"ok": True, "agent_id": agent_id, "experience": {}, "message": "No exported experience packet yet."}
@@ -2836,10 +3352,15 @@ def agent_name(agent: dict[str, Any]) -> str:
 
 def load_registered_agents(profiles: str | list[str] | tuple[str, ...] | set[str] | None = None) -> list[dict[str, Any]]:
     rows = filter_rows_by_profiles(load_many("agents", "*.passport.json"), profiles, ("agent_id",))
+    active_rows: list[dict[str, Any]] = []
     for row in rows:
         agent_id = str(row.get("agent_id") or "")
+        location = read_json(DIRS["locations"] / f"{clean_id(agent_id)}.location.json", {})
+        if str(location.get("status") or "") in {"left", "left_platform"}:
+            continue
         row["display_name"] = stored_agent_display_name(agent_id, str(row.get("display_name") or "")) or agent_id
-    return sorted(rows, key=lambda row: str(row.get("agent_id", "")))
+        active_rows.append(row)
+    return sorted(active_rows, key=lambda row: str(row.get("agent_id", "")))
 
 
 def load_gate_receipts(profiles: str | list[str] | tuple[str, ...] | set[str] | None = None) -> list[dict[str, Any]]:

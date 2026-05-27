@@ -12,6 +12,7 @@ This prototype separates four things:
 from __future__ import annotations
 
 import argparse
+import base64
 import copy
 import hashlib
 import json
@@ -24,6 +25,9 @@ from typing import Any
 
 
 SCHEMA = "pkm.v1"
+VISIBLE_PROOF_SCHEMA = "pkm.visible.proof.v1"
+VISIBLE_PROOF_METHOD = "ed25519"
+ORB_SESSION_SCHEMA = "pdk.orb_launch_session.v1"
 ROOT = Path(__file__).resolve().parent
 DEFAULT_STATE = ROOT / "state" / "agent.pkm.json"
 DEFAULT_VISIBLE = ROOT / "public" / "pkm_visible.json"
@@ -1103,6 +1107,278 @@ def text_fingerprint(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
 
 
+def _b64encode(raw: bytes) -> str:
+    return base64.b64encode(raw).decode("ascii")
+
+
+def _b64decode(text: str) -> bytes:
+    return base64.b64decode(str(text or "").encode("ascii"), validate=True)
+
+
+def canonical_visible_export_bytes(visible: dict[str, Any]) -> bytes:
+    body = copy.deepcopy(visible)
+    body.pop("proof", None)
+    return json.dumps(body, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+
+def visible_export_canonical_sha256(visible: dict[str, Any]) -> str:
+    return hashlib.sha256(canonical_visible_export_bytes(visible)).hexdigest()
+
+
+def _visible_export_signing_message(visible: dict[str, Any]) -> bytes:
+    return b"pkm.visible.v1\n" + canonical_visible_export_bytes(visible)
+
+
+def ensure_visible_export_signing_key(state: dict[str, Any]) -> dict[str, str]:
+    try:
+        from cryptography.hazmat.primitives import serialization
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    except Exception as exc:  # pragma: no cover - dependency availability is environment-specific.
+        raise RuntimeError("cryptography is required to sign pkm.visible.v1 exports") from exc
+
+    security = state.setdefault("security", {})
+    if not isinstance(security, dict):
+        security = {}
+        state["security"] = security
+    signing = security.get("visible_export_signing")
+    if isinstance(signing, dict):
+        try:
+            private_raw = _b64decode(str(signing.get("private_key_b64") or ""))
+            public_raw = _b64decode(str(signing.get("public_key_b64") or ""))
+            if len(private_raw) == 32 and len(public_raw) == 32:
+                key_id = "ed25519:" + hashlib.sha256(public_raw).hexdigest()[:16]
+                if signing.get("key_id") == key_id:
+                    return {
+                        "key_id": key_id,
+                        "private_key_b64": str(signing["private_key_b64"]),
+                        "public_key_b64": str(signing["public_key_b64"]),
+                    }
+        except Exception:
+            pass
+
+    private_key = Ed25519PrivateKey.generate()
+    public_key = private_key.public_key()
+    private_raw = private_key.private_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PrivateFormat.Raw,
+        encryption_algorithm=serialization.NoEncryption(),
+    )
+    public_raw = public_key.public_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PublicFormat.Raw,
+    )
+    key_id = "ed25519:" + hashlib.sha256(public_raw).hexdigest()[:16]
+    signing = {
+        "schema": "pkm.visible_export_signing_key.v1",
+        "method": VISIBLE_PROOF_METHOD,
+        "key_id": key_id,
+        "private_key_b64": _b64encode(private_raw),
+        "public_key_b64": _b64encode(public_raw),
+        "created_at": now_iso(),
+    }
+    security["visible_export_signing"] = signing
+    return {
+        "key_id": key_id,
+        "private_key_b64": signing["private_key_b64"],
+        "public_key_b64": signing["public_key_b64"],
+    }
+
+
+def sign_visible_export(state: dict[str, Any], visible: dict[str, Any]) -> dict[str, Any]:
+    try:
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    except Exception as exc:  # pragma: no cover - dependency availability is environment-specific.
+        raise RuntimeError("cryptography is required to sign pkm.visible.v1 exports") from exc
+
+    signing = ensure_visible_export_signing_key(state)
+    private_key = Ed25519PrivateKey.from_private_bytes(_b64decode(signing["private_key_b64"]))
+    signature = private_key.sign(_visible_export_signing_message(visible))
+    visible["proof"] = {
+        "schema": VISIBLE_PROOF_SCHEMA,
+        "method": VISIBLE_PROOF_METHOD,
+        "exporter": "pkm.export_visible",
+        "created_at": now_iso(),
+        "key_id": signing["key_id"],
+        "public_key_b64": signing["public_key_b64"],
+        "canonical_sha256": visible_export_canonical_sha256(visible),
+        "signature_b64": _b64encode(signature),
+    }
+    return visible
+
+
+def verify_visible_export_proof(visible: dict[str, Any]) -> dict[str, Any]:
+    errors: list[str] = []
+    proof = visible.get("proof") if isinstance(visible.get("proof"), dict) else {}
+    canonical_sha256 = visible_export_canonical_sha256(visible)
+    if not proof:
+        return {
+            "ok": False,
+            "errors": ["pkm_visible.proof is missing; re-export with the current PDK personality orb"],
+            "canonical_sha256": canonical_sha256,
+        }
+    if proof.get("schema") != VISIBLE_PROOF_SCHEMA:
+        errors.append(f"pkm_visible.proof.schema must be {VISIBLE_PROOF_SCHEMA}")
+    if proof.get("method") != VISIBLE_PROOF_METHOD:
+        errors.append(f"pkm_visible.proof.method must be {VISIBLE_PROOF_METHOD}")
+    if proof.get("exporter") != "pkm.export_visible":
+        errors.append("pkm_visible.proof.exporter must be pkm.export_visible")
+    if proof.get("canonical_sha256") != canonical_sha256:
+        errors.append("pkm_visible.proof.canonical_sha256 does not match the submitted export")
+    try:
+        public_raw = _b64decode(str(proof.get("public_key_b64") or ""))
+        signature = _b64decode(str(proof.get("signature_b64") or ""))
+    except Exception:
+        public_raw = b""
+        signature = b""
+        errors.append("pkm_visible.proof public key or signature is not valid base64")
+    if public_raw:
+        expected_key_id = "ed25519:" + hashlib.sha256(public_raw).hexdigest()[:16]
+        if proof.get("key_id") != expected_key_id:
+            errors.append("pkm_visible.proof.key_id does not match public_key_b64")
+    if public_raw and signature:
+        try:
+            from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+
+            Ed25519PublicKey.from_public_bytes(public_raw).verify(signature, _visible_export_signing_message(visible))
+        except Exception:
+            errors.append("pkm_visible.proof.signature_b64 does not verify")
+    return {
+        "ok": not errors,
+        "errors": errors,
+        "canonical_sha256": canonical_sha256,
+        "key_id": str(proof.get("key_id") or ""),
+    }
+
+
+def external_entry_challenge_message(challenge: dict[str, Any]) -> bytes:
+    if isinstance(challenge.get("challenge"), dict):
+        challenge = challenge["challenge"]
+    body = {
+        "schema": "pdk.external_entry_challenge.v1",
+        "challenge_id": str(challenge.get("challenge_id") or ""),
+        "challenge_token": str(challenge.get("challenge_token") or ""),
+        "agent_id": str(challenge.get("agent_id") or ""),
+        "pkm_visible_sha256": str(challenge.get("pkm_visible_sha256") or ""),
+        "expires_at": str(challenge.get("expires_at") or ""),
+    }
+    return b"pdk.external.entry.challenge.v1\n" + json.dumps(
+        body, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+
+
+def orb_launch_session_message(session: dict[str, Any]) -> bytes:
+    body = {
+        "schema": ORB_SESSION_SCHEMA,
+        "session_id": str(session.get("session_id") or ""),
+        "profile": str(session.get("profile") or ""),
+        "agent_id": str(session.get("agent_id") or ""),
+        "visible_sha256": str(session.get("visible_sha256") or ""),
+        "launch_kind": str(session.get("launch_kind") or ""),
+        "launched_at": str(session.get("launched_at") or ""),
+    }
+    return b"pdk.orb.launch.session.v1\n" + json.dumps(
+        body, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+
+
+def create_orb_launch_session(
+    state: dict[str, Any],
+    profile: str,
+    visible: dict[str, Any],
+    launch_kind: str = "personality_orb",
+) -> dict[str, Any]:
+    try:
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    except Exception as exc:  # pragma: no cover - dependency availability is environment-specific.
+        raise RuntimeError("cryptography is required to sign PDK orb launch sessions") from exc
+
+    signing = ensure_visible_export_signing_key(state)
+    session = {
+        "schema": ORB_SESSION_SCHEMA,
+        "session_id": "orb_" + text_fingerprint(str(profile) + now_iso() + signing["key_id"]),
+        "profile": str(profile or ""),
+        "agent_id": str(state.get("manifest", {}).get("agent_id") or ""),
+        "visible_sha256": visible_export_canonical_sha256(visible),
+        "launch_kind": launch_kind,
+        "launched_at": now_iso(),
+        "key_id": signing["key_id"],
+        "public_key_b64": signing["public_key_b64"],
+    }
+    private_key = Ed25519PrivateKey.from_private_bytes(_b64decode(signing["private_key_b64"]))
+    session["signature_b64"] = _b64encode(private_key.sign(orb_launch_session_message(session)))
+    return session
+
+
+def verify_orb_launch_session(session: dict[str, Any], visible: dict[str, Any], max_age_seconds: int = 7200) -> dict[str, Any]:
+    errors: list[str] = []
+    if not isinstance(session, dict) or not session:
+        return {"ok": False, "errors": ["entry_proof.orb_session is required; open the local personality orb before signing entry"]}
+    if session.get("schema") != ORB_SESSION_SCHEMA:
+        errors.append(f"entry_proof.orb_session.schema must be {ORB_SESSION_SCHEMA}")
+    visible_proof = visible.get("proof") if isinstance(visible.get("proof"), dict) else {}
+    if str(session.get("key_id") or "") != str(visible_proof.get("key_id") or ""):
+        errors.append("entry_proof.orb_session.key_id must match pkm_visible.proof.key_id")
+    if str(session.get("public_key_b64") or "") != str(visible_proof.get("public_key_b64") or ""):
+        errors.append("entry_proof.orb_session.public_key_b64 must match pkm_visible.proof.public_key_b64")
+    if str(session.get("visible_sha256") or "") != visible_export_canonical_sha256(visible):
+        errors.append("entry_proof.orb_session.visible_sha256 does not match the submitted pkm_visible")
+    visible_agent = visible.get("agent") if isinstance(visible.get("agent"), dict) else {}
+    if str(session.get("agent_id") or "") != str(visible_agent.get("id") or ""):
+        errors.append("entry_proof.orb_session.agent_id must match pkm_visible.agent.id")
+    launched_at = str(session.get("launched_at") or "")
+    try:
+        launched = datetime.fromisoformat(launched_at.replace("Z", "+00:00"))
+        if launched.tzinfo is None:
+            launched = launched.replace(tzinfo=timezone.utc)
+        age = (datetime.now(timezone.utc) - launched.astimezone(timezone.utc)).total_seconds()
+        if age < -60 or age > max_age_seconds:
+            errors.append("entry_proof.orb_session is not recent; open the personality orb again before entry")
+    except Exception:
+        errors.append("entry_proof.orb_session.launched_at is invalid")
+    if not errors:
+        try:
+            from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+
+            public_raw = _b64decode(str(session.get("public_key_b64") or ""))
+            signature = _b64decode(str(session.get("signature_b64") or ""))
+            Ed25519PublicKey.from_public_bytes(public_raw).verify(signature, orb_launch_session_message(session))
+        except Exception:
+            errors.append("entry_proof.orb_session.signature_b64 does not verify")
+    return {"ok": not errors, "errors": errors}
+
+
+def sign_external_entry_challenge(
+    state: dict[str, Any],
+    challenge: dict[str, Any],
+    orb_session: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    try:
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    except Exception as exc:  # pragma: no cover - dependency availability is environment-specific.
+        raise RuntimeError("cryptography is required to sign PDK entry challenges") from exc
+
+    signing = ensure_visible_export_signing_key(state)
+    if isinstance(challenge.get("challenge"), dict):
+        challenge = challenge["challenge"]
+    private_key = Ed25519PrivateKey.from_private_bytes(_b64decode(signing["private_key_b64"]))
+    signature = private_key.sign(external_entry_challenge_message(challenge))
+    proof = {
+        "schema": "pdk.external_entry_proof.v1",
+        "method": VISIBLE_PROOF_METHOD,
+        "challenge_id": str(challenge.get("challenge_id") or ""),
+        "challenge_token": str(challenge.get("challenge_token") or ""),
+        "agent_id": str(challenge.get("agent_id") or ""),
+        "pkm_visible_sha256": str(challenge.get("pkm_visible_sha256") or ""),
+        "expires_at": str(challenge.get("expires_at") or ""),
+        "key_id": signing["key_id"],
+        "public_key_b64": signing["public_key_b64"],
+        "signature_b64": _b64encode(signature),
+    }
+    if orb_session:
+        proof["orb_session"] = orb_session
+    return proof
+
+
 def default_state() -> dict[str, Any]:
     return {
         "schema": SCHEMA,
@@ -1134,6 +1410,7 @@ def default_state() -> dict[str, Any]:
             "prototype_limit": 24,
             "trace_limit": 40,
         },
+        "security": {},
     }
 
 
@@ -1173,6 +1450,8 @@ def ensure_defaults(state: dict[str, Any]) -> None:
     state.setdefault("learning", template["learning"])
     for key, value in template["learning"].items():
         state["learning"].setdefault(key, value)
+    if not isinstance(state.get("security"), dict):
+        state["security"] = {}
 
 
 def save_state(path: Path, state: dict[str, Any]) -> None:
@@ -2385,6 +2664,7 @@ def export_visible(state: dict[str, Any], path: Path, runtime: dict[str, Any] | 
         "runtime": runtime or {},
         "prototype_count": len(state.get("situation_prototypes", [])),
     }
+    sign_visible_export(state, visible)
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as f:
         json.dump(visible, f, ensure_ascii=False, indent=2)
@@ -3144,6 +3424,10 @@ def parse_args() -> argparse.Namespace:
     p_export = sub.add_parser("export-visible", help="export 3D visible morphology JSON")
     p_export.add_argument("--out", type=Path, default=DEFAULT_VISIBLE)
 
+    p_sign_entry = sub.add_parser("sign-entry-challenge", help="sign a PDK public gateway entry challenge with this personality orb")
+    p_sign_entry.add_argument("--challenge-json", required=True, help="Challenge JSON file returned by /api/external/challenge, or '-' for stdin")
+    p_sign_entry.add_argument("--orb-session", required=True, type=Path, help="Recent agents/<profile>/state/orb_session.json written when the personality orb was opened")
+
     p_handoff = sub.add_parser("export-handoff", help="export a fresh Codex dialogue test packet")
     p_handoff.add_argument("--out", type=Path, default=ROOT / "NEW_CODEX_TEST.md")
     p_handoff.add_argument("--mode", choices=["fresh", "continue"], default="fresh")
@@ -3173,6 +3457,7 @@ def main() -> int:
         apply_personality_backup(state, backup, merge=args.merge)
         save_state(args.state, state)
         visible = export_visible(state, args.out_visible)
+        save_state(args.state, state)
         print_json(
             {
                 "imported": str(args.backup),
@@ -3195,7 +3480,9 @@ def main() -> int:
         return 0
 
     if args.command == "decide":
-        print_json(decide(state, args.text))
+        result = decide(state, args.text)
+        save_state(args.state, state)
+        print_json(result)
         return 0
 
     if args.command == "settle":
@@ -3217,7 +3504,19 @@ def main() -> int:
 
     if args.command == "export-visible":
         visible = export_visible(state, args.out)
+        save_state(args.state, state)
         print_json({"exported": str(args.out), "agent": visible["agent"]})
+        return 0
+
+    if args.command == "sign-entry-challenge":
+        if args.challenge_json == "-":
+            challenge = json.loads(sys.stdin.read())
+        else:
+            challenge = json.loads(Path(args.challenge_json).read_text(encoding="utf-8-sig"))
+        orb_session = json.loads(args.orb_session.read_text(encoding="utf-8-sig"))
+        proof = sign_external_entry_challenge(state, challenge, orb_session=orb_session)
+        save_state(args.state, state)
+        print_json({"entry_proof": proof})
         return 0
 
     if args.command == "export-handoff":

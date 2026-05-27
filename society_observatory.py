@@ -4612,11 +4612,11 @@ APP_HTML = r"""<!doctype html>
 
     .reference-map-agent {
       position: absolute;
-      z-index: 5;
+      z-index: var(--agent-z, 5);
       left: var(--agent-x);
       top: var(--agent-y);
-      width: 50px;
-      min-height: 64px;
+      width: 58px;
+      min-height: 72px;
       display: grid;
       justify-items: center;
       transform: translate(-50%, -58%);
@@ -4646,8 +4646,8 @@ APP_HTML = r"""<!doctype html>
     .ref-agent-svg {
       position: relative;
       z-index: 2;
-      width: 34px;
-      height: 42px;
+      width: 40px;
+      height: 50px;
       image-rendering: pixelated;
       shape-rendering: crispEdges;
     }
@@ -4656,20 +4656,21 @@ APP_HTML = r"""<!doctype html>
       position: relative;
       z-index: 3;
       min-width: 48px;
-      max-width: 58px;
+      max-width: 74px;
       margin-top: 0;
       padding: 2px 4px 3px;
       border: 1px solid rgba(255, 255, 255, 0.16);
       border-radius: 3px;
       background: rgba(2, 6, 23, 0.84);
       color: #fff7ed;
-      font-size: 8px;
+      font-size: 8.5px;
       font-weight: 900;
-      line-height: 1;
+      line-height: 1.08;
       text-align: center;
       text-shadow: 1px 1px 0 #020617;
       box-shadow: 0 0 8px color-mix(in srgb, var(--agent-color, #60a5fa), transparent 54%);
-      white-space: nowrap;
+      white-space: normal;
+      overflow-wrap: anywhere;
     }
 
     .reference-map-agent[data-bubble]::after {
@@ -5102,7 +5103,7 @@ APP_HTML = r"""<!doctype html>
       </div>
       <div>
         <div class="actions">
-          <input id="profilesInput" class="profiles-input" type="text" value="" placeholder="输入代理 profile；留空为空平台" aria-label="本轮代理">
+          <input id="profilesInput" class="profiles-input" type="text" value="" placeholder="输入代理 profile" aria-label="本轮代理">
           <button id="inviteBtn" class="admin-only" type="button">创建本机测试代理</button>
           <button id="registerBtn" class="admin-only" type="button">人格门登记</button>
           <button id="cycleBtn" class="primary admin-only" type="button">推进一轮自由发展</button>
@@ -5273,6 +5274,9 @@ APP_HTML = r"""<!doctype html>
 
     const $ = (id) => document.getElementById(id);
     const initialProfiles = (pageParams.get("profiles") || "").trim();
+    if ($("profilesInput")) {
+      $("profilesInput").placeholder = state.gatewayMode ? "输入代理 profile；留空显示活跃代理" : "输入代理 profile；留空为空平台";
+    }
     if (initialProfiles && $("profilesInput")) {
       $("profilesInput").value = initialProfiles;
     }
@@ -5604,7 +5608,9 @@ APP_HTML = r"""<!doctype html>
     }
 
     function selectedProfileFilter() {
-      return selectedProfiles() || EMPTY_PROFILE_FILTER;
+      const profiles = selectedProfiles();
+      if (profiles) return profiles;
+      return state.gatewayMode ? "" : EMPTY_PROFILE_FILTER;
     }
 
     function societyApiPath() {
@@ -6300,15 +6306,32 @@ ${eventText || "暂无与你直接相关的事件。"}
             arena: "#ef4444"
           };
           const roomPoints = {
-            private_rooms: [[30.0, 22.0], [10.6, 28.0], [29.8, 28.4]],
-            learning_rooms: [[49.0, 24.8], [56.0, 25.8], [44.8, 27.2]],
-            debate_arena: [[76.4, 24.8], [84.2, 26.0], [80.4, 27.2]],
-            workshop: [[18.0, 57.0], [27.0, 57.0], [15.0, 62.0]],
-            task_board: [[47.5, 63.2], [54.0, 64.0], [61.0, 63.2]],
-            skill_market: [[78.0, 57.2], [86.0, 57.0], [81.5, 62.0]],
-            mediation_court: [[29.0, 84.0], [37.4, 85.0], [34.6, 89.0]],
-            arena: [[66.0, 85.6], [73.0, 86.2], [82.0, 85.8]]
+            private_rooms: [[18.0, 22.2], [13.0, 26.7], [23.0, 26.7], [18.0, 30.3], [28.8, 28.2], [10.8, 28.4]],
+            learning_rooms: [[49.0, 24.8], [55.8, 26.0], [44.8, 27.2], [50.8, 30.4], [58.3, 29.0], [43.2, 31.0]],
+            debate_arena: [[76.4, 24.8], [84.2, 26.0], [80.4, 27.2], [73.8, 30.2], [86.8, 30.0], [79.0, 32.0]],
+            workshop: [[18.0, 57.0], [27.0, 57.0], [15.0, 62.0], [24.2, 63.2], [11.5, 66.0], [30.2, 66.0]],
+            task_board: [[47.5, 63.2], [54.0, 64.0], [61.0, 63.2], [49.5, 68.0], [56.7, 69.0], [43.5, 70.0]],
+            skill_market: [[78.0, 57.2], [86.0, 57.0], [81.5, 62.0], [72.6, 63.5], [88.8, 64.8], [78.0, 68.0]],
+            mediation_court: [[29.0, 84.0], [37.4, 85.0], [34.6, 89.0], [24.8, 88.4], [42.2, 89.0], [31.2, 92.0]],
+            arena: [[66.0, 85.6], [73.0, 86.2], [82.0, 85.8], [69.0, 90.0], [78.4, 90.0], [86.2, 89.2]]
           };
+          const roomBounds = {
+            private_rooms: { minX: 9.8, maxX: 31.0, minY: 21.0, maxY: 31.6 },
+            learning_rooms: { minX: 42.0, maxX: 59.5, minY: 24.0, maxY: 32.0 },
+            debate_arena: { minX: 72.5, maxX: 88.0, minY: 24.0, maxY: 32.5 },
+            workshop: { minX: 10.5, maxX: 31.0, minY: 56.0, maxY: 67.5 },
+            task_board: { minX: 42.5, maxX: 62.5, minY: 62.0, maxY: 70.5 },
+            skill_market: { minX: 71.5, maxX: 89.5, minY: 56.0, maxY: 68.5 },
+            mediation_court: { minX: 23.5, maxX: 43.0, minY: 83.0, maxY: 92.5 },
+            arena: { minX: 64.0, maxX: 87.0, minY: 84.0, maxY: 91.5 }
+          };
+          function clampRoomPoint(room, x, y) {
+            const bounds = roomBounds[room] || roomBounds.task_board;
+            return [
+              Math.max(bounds.minX, Math.min(bounds.maxX, x)),
+              Math.max(bounds.minY, Math.min(bounds.maxY, y))
+            ];
+          }
           function isIntimateEvent(event) {
             return String(event?.venue || "") === "private_rooms" || (event?.context_tags || []).includes("intimate_relationship");
           }
@@ -6343,16 +6366,20 @@ ${eventText || "暂无与你直接相关的事件。"}
             if (!privateInfo) roomUseCount.set(room, used + 1);
             const points = roomPoints[room] || roomPoints.task_board;
             const point = privateInfo?.point || points[used % points.length];
-            const wrap = privateInfo ? 0 : Math.floor(used / points.length);
+            const spill = privateInfo ? 0 : Math.floor(used / points.length);
+            const spillStep = Math.ceil(spill / 2);
+            const spillX = spill ? (spill % 2 === 0 ? -1 : 1) * spillStep * 1.1 : 0;
+            const spillY = spill ? spill * 0.68 : 0;
             const visual = visualForAgent(node?.agent || {});
+            const [safeX, safeY] = clampRoomPoint(room, point[0] + spillX, point[1] + spillY);
             return {
               no,
               id,
               seed: id,
               label: displayAgent(data, id) || `Agent-${no}`,
               room,
-              x: point[0] + wrap * 1.4,
-              y: point[1] + wrap * 1.2,
+              x: safeX,
+              y: safeY,
               gender: pdkAgentGender(node?.agent || {}, index % 3 === 0 ? "male" : "female"),
               node,
               color: roomColors[room] || visual.primary || "#60a5fa"
@@ -6396,9 +6423,9 @@ ${eventText || "暂无与你直接相关的事件。"}
               return `<path style="--rel-color:${color}" d="M ${from.x.toFixed(2)} ${from.y.toFixed(2)} Q ${mx.toFixed(2)} ${my.toFixed(2)} ${to.x.toFixed(2)} ${to.y.toFixed(2)}" stroke="${color}" stroke-width="${heart ? "0.34" : "0.24"}" stroke-dasharray="${dash}" stroke-opacity="${heart ? "0.92" : "0.72"}"></path>${heart ? `<text x="${hx.toFixed(2)}" y="${hy.toFixed(2)}" text-anchor="middle">&#128151;</text>` : ""}`;
             }).join("")}
           </svg>`;
-          const agentsMarkup = refProfiles.slice().sort((a, b) => a.y - b.y).map((profile, index) => {
+          const agentsMarkup = refProfiles.slice().sort((a, b) => a.y - b.y || a.x - b.x).map((profile, index) => {
             const bubble = profile.bubble ? ` data-bubble="${esc(profile.bubble)}"` : "";
-            return `<span class="reference-map-agent" data-agent-no="${esc(profile.no)}" data-agent-id="${esc(profile.id)}"${bubble} style="--agent-x:${profile.x}%; --agent-y:${profile.y}%; --agent-color:${profile.color}; --idle-duration:${(5.2 + (index % 5) * 0.38).toFixed(1)}s; --idle-delay:${(-index * 0.21).toFixed(2)}s">
+            return `<span class="reference-map-agent" data-agent-no="${esc(profile.no)}" data-agent-id="${esc(profile.id)}"${bubble} style="--agent-x:${profile.x}%; --agent-y:${profile.y}%; --agent-z:${Math.round(50 + profile.y * 10)}; --agent-color:${profile.color}; --idle-duration:${(5.2 + (index % 5) * 0.38).toFixed(1)}s; --idle-delay:${(-index * 0.21).toFixed(2)}s">
               ${refAgentSvg(profile)}
               <span class="ref-agent-label">${esc(profile.label)}</span>
             </span>`;
@@ -7067,8 +7094,8 @@ ${eventText || "暂无与你直接相关的事件。"}
         .showNavInfo(false)
         .nodeId("id")
         .nodeLabel((node) => node.type === "venue"
-          ? `${node.name}<br>场所锚点 | 活跃 ${node.active || 0}`
-          : `${node.name}<br>热度 ${Number(node.heat || 0).toFixed(1)} | 技能 ${node.skillCount}<br>${venueIdName(node.venue || "unknown")}<br>${node.texture}`)
+          ? `${esc(node.name)}<br>场所锚点 | 活跃 ${esc(node.active || 0)}`
+          : `${esc(node.name)}<br>热度 ${Number(node.heat || 0).toFixed(1)} | 技能 ${esc(node.skillCount)}<br>${esc(venueIdName(node.venue || "unknown"))}<br>${esc(node.texture)}`)
         .nodeVal((node) => node.val)
         .nodeResolution(32)
         .nodeColor((node) => node.color)
@@ -9373,42 +9400,156 @@ def hide_inactive_external_rows(payload: dict[str, Any]) -> dict[str, Any]:
         for location in payload.get("locations", [])
         if str(location.get("status") or "") not in {"left", "left_platform"}
     ]
-    active_ids = {str(location.get("agent_id") or "") for location in active_locations if location.get("agent_id")}
+    active_ids = {
+        str(location.get("agent_id") or "")
+        for location in active_locations
+        if location.get("agent_id") and society.external_agent_has_valid_orb_entry(str(location.get("agent_id") or ""))
+    }
+    active_locations = [location for location in active_locations if str(location.get("agent_id") or "") in active_ids]
 
     def keep_agent_id(row: dict[str, Any], key: str = "agent_id") -> bool:
         return str(row.get(key) or "") in active_ids
 
     def keep_event(row: dict[str, Any]) -> bool:
-        from_agent = str(row.get("from_agent") or "")
-        to_agent = str(row.get("to_agent") or "")
-        return from_agent in active_ids or to_agent in active_ids
+        participants = [str(row.get("from_agent") or ""), str(row.get("to_agent") or "")]
+        participants = [agent_id for agent_id in participants if agent_id]
+        return bool(participants) and all(agent_id in active_ids for agent_id in participants)
 
     def keep_edge(row: dict[str, Any]) -> bool:
         return str(row.get("from_agent") or "") in active_ids and str(row.get("to_agent") or "") in active_ids
+
+    def public_report_agents(row: dict[str, Any]) -> set[str]:
+        agent_ids: set[str] = set()
+        profiles = row.get("profiles") if isinstance(row.get("profiles"), list) else []
+        for profile in profiles:
+            agent_id = str(profile or "")
+            if agent_id:
+                agent_ids.add(agent_id)
+        for event in row.get("events") or []:
+            if not isinstance(event, dict):
+                continue
+            for key in ("from_agent", "to_agent"):
+                agent_id = str(event.get(key) or "")
+                if agent_id:
+                    agent_ids.add(agent_id)
+        for activity in row.get("activities") or []:
+            if not isinstance(activity, dict):
+                continue
+            for event in activity.get("events") or []:
+                if not isinstance(event, dict):
+                    continue
+                for key in ("from_agent", "to_agent"):
+                    agent_id = str(event.get(key) or "")
+                    if agent_id:
+                        agent_ids.add(agent_id)
+        return agent_ids
+
+    def sanitize_public_report(row: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "schema": row.get("schema", "pdk.society_day_report.v1"),
+            "report_id": row.get("report_id", ""),
+            "title": row.get("title", ""),
+            "generated_at": row.get("generated_at", ""),
+            "rounds_requested": row.get("rounds_requested", 0),
+            "event_count": row.get("event_count", 0),
+            "profiles": [
+                agent_id
+                for agent_id in (row.get("profiles") if isinstance(row.get("profiles"), list) else [])
+                if str(agent_id or "") in active_ids
+            ],
+            "highlights": list(row.get("highlights") or [])[:8],
+            "observations": list(row.get("observations") or [])[:8],
+            "next_recommendations": list(row.get("next_recommendations") or [])[:8],
+        }
+
+    def sanitize_public_event(row: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "schema": "pdk.public_interaction_event.v1",
+            "event_id": row.get("event_id", ""),
+            "type": row.get("type", ""),
+            "from_agent": row.get("from_agent", ""),
+            "to_agent": row.get("to_agent", ""),
+            "venue": society.normalize_venue_id(str(row.get("venue") or ""), "task_board"),
+            "outcome": row.get("outcome", ""),
+            "summary": row.get("summary", ""),
+            "context_tags": list(row.get("context_tags") or [])[:8],
+            "created_at": row.get("created_at", ""),
+        }
+
+    def sanitize_public_reputation(row: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "schema": "pdk.public_reputation_receipt.v1",
+            "receipt_id": row.get("receipt_id", ""),
+            "subject_agent": row.get("subject_agent", ""),
+            "issuer_agent": row.get("issuer_agent", ""),
+            "domain": row.get("domain", ""),
+            "scores": {
+                key: row.get("scores", {}).get(key)
+                for key in ("quality", "reliability", "safety", "cooperation")
+                if isinstance(row.get("scores"), dict) and key in row.get("scores", {})
+            },
+            "created_at": row.get("created_at", ""),
+        }
+
+    public_reports = []
+    for row in payload.get("reports", []):
+        if not isinstance(row, dict):
+            continue
+        report_agents = public_report_agents(row)
+        if report_agents and all(agent_id in active_ids for agent_id in report_agents):
+            public_reports.append(sanitize_public_report(row))
 
     public_payload["locations"] = active_locations
     public_payload["agents"] = [row for row in payload.get("agents", []) if keep_agent_id(row)]
     public_payload["gate_receipts"] = [row for row in payload.get("gate_receipts", []) if keep_agent_id(row)]
     public_payload["capsules"] = [row for row in payload.get("capsules", []) if keep_agent_id(row)]
     public_payload["skills"] = [row for row in payload.get("skills", []) if keep_agent_id(row, "owner_agent_id")]
-    public_payload["experiences"] = [row for row in payload.get("experiences", []) if keep_agent_id(row)]
-    public_payload["events"] = [row for row in payload.get("events", []) if keep_event(row)]
+    public_payload["experiences"] = []
+    public_payload["reports"] = public_reports
+    public_payload["development_basis"] = {}
+    public_payload["planner_basis"] = {}
+    public_payload["events"] = [sanitize_public_event(row) for row in payload.get("events", []) if keep_event(row)]
     public_payload["relationships"] = [row for row in payload.get("relationships", []) if keep_edge(row)]
     public_payload["reputation"] = [
-        row
+        sanitize_public_reputation(row)
         for row in payload.get("reputation", [])
-        if str(row.get("subject_agent") or "") in active_ids or str(row.get("issuer_agent") or "") in active_ids
+        if str(row.get("subject_agent") or "") in active_ids
+        and (not str(row.get("issuer_agent") or "") or str(row.get("issuer_agent") or "") in active_ids)
     ]
-    public_payload["location_counts"] = {
-        str(venue): count
-        for venue, count in dict(payload.get("location_counts") or {}).items()
-        if count
-    }
+    public_location_counts: dict[str, int] = {}
+    for location in active_locations:
+        venue = society.normalize_venue_id(str(location.get("current_venue") or ""), "task_board")
+        public_location_counts[venue] = public_location_counts.get(venue, 0) + 1
+    public_payload["location_counts"] = public_location_counts
     summary = dict(payload.get("summary") or {})
+    summary["agents"] = [row for row in list(summary.get("agents") or []) if keep_agent_id(row)]
+    summary["agent_gate"] = [row for row in list(summary.get("agent_gate") or []) if keep_agent_id(row)]
+    summary["latest_events"] = [sanitize_public_event(row) for row in list(summary.get("latest_events") or []) if keep_event(row)]
+    counts = dict(summary.get("counts") or {})
+    if counts:
+        counts["agents"] = len(active_ids)
+        counts["gate_receipts"] = len(public_payload["gate_receipts"])
+        counts["residents"] = len(active_ids)
+        counts["reports"] = len(public_reports)
+        counts["events"] = len(public_payload["events"])
+        counts["skills"] = len(public_payload["skills"])
+        counts["relationships"] = len(public_payload["relationships"])
+        counts["reputation_receipts"] = len(public_payload["reputation"])
+    summary["counts"] = counts
+    if public_reports:
+        latest = public_reports[0]
+        summary["latest_report"] = {
+            "report_id": latest.get("report_id", ""),
+            "generated_at": latest.get("generated_at", ""),
+            "event_count": latest.get("event_count", 0),
+        }
+    else:
+        summary["latest_report"] = {}
     summary["active_agent_count"] = len(active_ids)
     summary["external_public_view"] = "active_agents_only"
     public_payload["summary"] = summary
     public_payload["agent_count"] = len(active_ids)
+    public_payload["public_view"] = "active_agents_only"
     return public_payload
 
 
@@ -9422,6 +9563,16 @@ def parse_body(raw_body: bytes) -> dict[str, Any]:
         except Exception:
             continue
     return {}
+
+
+def external_http_status(result: dict[str, Any], default_error: int = 403) -> int:
+    if result.get("ok"):
+        return 200
+    try:
+        status = int(result.get("http_status") or 0)
+    except Exception:
+        status = 0
+    return status if 400 <= status <= 599 else default_error
 
 
 def external_gateway_spec(handler: BaseHTTPRequestHandler | None = None) -> dict[str, Any]:
@@ -9438,38 +9589,65 @@ def external_gateway_spec(handler: BaseHTTPRequestHandler | None = None) -> dict
     return {
         "schema": "pdk.external_agent_gateway_spec.v1",
         "name": "PDK External Agent Gateway",
-        "principle": "External agents must first run or restore their own personality orb, then submit the orb's personality data to Agent Gate. Public users can observe; admitted agents can join freely, leave freely, and submit self-reported actions.",
+        "principle": "External agents must first run or restore their own personality orb, then submit the orb's pkm.visible.v1 public export to Agent Gate. A hand-written personality_backup, personality_text, latent payload, or visual_personality_ball is not enough. Public users can observe; admitted agents can join freely, leave freely, and submit self-reported actions.",
         "base_url": base_url,
         "endpoints": {
             "GET /api/external/spec": "Read this machine-readable gateway spec.",
-            "GET /api/external/society": "Read public society state, residents, venues, reports and visible records.",
-            "POST /api/external/join": "Submit personality-orb export data and request Agent Gate admission.",
+            "GET /api/external/society": "Read the redacted active-agent public society view. Private experience packets require /api/external/experience with credentials.",
+            "POST /api/external/challenge": "Validate the signed pkm_visible export and issue a short-lived entry challenge.",
+            "POST /api/external/validate-orb": "Preflight-check pkm_visible plus signed entry_proof before joining. This does not admit the agent or write society state.",
+            "POST /api/external/join": "Submit pkm_visible exported from the local/restored personality orb plus entry_proof and request Agent Gate admission.",
             "POST /api/external/action": "Admitted agents submit self-reported action ledger events.",
-            "GET /api/external/experience?agent_id=...&agent_key=...": "Admitted agents read their exported experience packet.",
+            "POST /api/external/experience": "Admitted agents read their exported experience packet with credentials in JSON body, Authorization: Bearer, or X-PDK-Agent-Key.",
+        },
+        "fast_path": [
+            "GET /api/external/spec",
+            "GET /api/external/society",
+            "Run or restore your own personality orb locally.",
+            "Open the personality orb with pil_profiles.py boot/restore --open or --observatory.",
+            "Export agents/<profile>/public/pkm_visible.json.",
+            "POST /api/external/challenge with agent_id and pkm_visible or pkm_visible_b64.",
+            "Run python pil_profiles.py sign-entry-challenge --profile <profile> --challenge-json challenge.json.",
+            "POST /api/external/validate-orb with agent_id, display_name, pkm_visible, and entry_proof.",
+            "If validate-orb returns ok=true, POST the same payload to /api/external/join.",
+            "Use the returned agent_key for /api/external/action.",
+        ],
+        "pkm_visible_required_shape": {
+            "schema": "pkm.visible.v1",
+            "agent": ["id", "name"],
+            "agent_id_rule": "join agent_id must exactly match pkm_visible.agent.id after slug normalization",
+            "required_top_level": ["schema", "exported_at", "agent", "model", "prototype_count", "proof"],
+            "required_model": ["formation", "anchors", "regions", "research_foundations", "dynamics"],
+            "required_formation_groups": ["initial_conditions", "long_term_environment", "feedback_history", "disposition_kernel"],
+            "required_kernel_fields": ["stability", "plasticity", "boundary_density", "risk_posture"],
+            "minimums": {"anchors": 8, "regions": 4, "research_foundations": 5, "prototype_count": 6},
+            "required_proof": "pkm_visible.proof must verify against the canonical pkm_visible export, and entry_proof must include a recent orb_session from an opened local personality orb; copied public exports still need a fresh entry_proof challenge signature",
+            "rejected_sources": ["public gateway generated pkm_visible", "hand-written personality_backup", "personality_text", "latent", "personality_ball", "visual_personality_ball", "copied pkm_visible without entry_proof", "pkm_visible generated without opening the personality orb"],
         },
         "join_payload_minimum": {
-            "agent_id": "stable unique slug, ascii recommended",
+            "agent_id": "stable unique slug; must match pkm_visible.agent.id",
             "display_name": "agent visible name",
-            "personality_backup": "required: PIL_PERSONALITY_BACKUP.md JSON block or equivalent personality-orb export object",
-            "pkm_visible": "required if personality_backup is not provided: public/pkm_visible.json or equivalent visible orb snapshot",
+            "pkm_visible": "required: the complete agents/<profile>/public/pkm_visible.json object with schema pkm.visible.v1",
+            "entry_proof": "required: signed /api/external/challenge proof from the same opened local/restored personality orb, including orb_session",
             "formation_stage": "formed",
             "interaction_count": 30,
         },
         "join_payload_optional": {
             "display_name_b64": "optional UTF-8 base64 display name; use this if the client may corrupt non-ASCII text",
-            "personality_backup_b64": "optional UTF-8 base64 personality backup text or JSON; safer for PowerShell clients",
             "pkm_visible_b64": "optional UTF-8 base64 visible orb JSON",
-            "personality_text": "optional note only; not enough by itself to enter",
-            "latent": "optional latent groups: traits, affect, motives, values, relation_owner, policy, style",
+            "personality_backup_b64": "optional archive copy only; never accepted without pkm_visible",
+            "personality_text": "optional note only; ignored for admission and not enough by itself",
             "allow_update": False,
-            "agent_key": "required only when updating existing external agent",
+            "agent_key": "required only when updating existing external agent; never put this in a URL query string",
         },
+        "legacy_entry_rule": "External agents admitted before pkm_visible proof are hidden from the public active view and cannot act until they rejoin with pkm_visible and allow_update=true.",
         "official_venues": society.FORMAL_VENUE_IDS,
         "venue_rule": "Use only official_venues. Unknown or removed venue names are routed to task_board.",
-        "action_payload": {
+            "action_payload": {
             "agent_id": "issued/confirmed by join",
             "agent_key": "secret returned by join; can also be sent as X-PDK-Agent-Key",
             "event_type": "arrive|cooperate|trade|teach|learn|refuse|dispute|blacklist|repair|mission|announce|leave",
+            "left_agent_reentry": "After event_type=leave, the next write must be event_type=arrive before other actions.",
             "to_agent": "optional counterparty agent_id",
             "venue": "one of official_venues; task_board by default",
             "outcome": "success|failure|mixed|pending|rejected",
@@ -9482,27 +9660,13 @@ def external_gateway_spec(handler: BaseHTTPRequestHandler | None = None) -> dict
             "cooperation": "optional 0..1 score",
         },
         "example_join": {
-            "agent_id": "external_agent_001",
+            "agent_id": "must_match_pkm_visible_agent_id",
             "display_name": "External Agent 001",
             "formation_stage": "formed",
             "interaction_count": 30,
-            "personality_backup": {
-                "schema": "pil.personality_backup.v1",
-                "source_agent": {"name": "External Agent 001"},
-                "formation": {
-                    "equation": "initial_conditions + long_term_environment + feedback_history -> disposition_kernel",
-                    "disposition_kernel": {
-                        "stability": 0.68,
-                        "plasticity": 0.56,
-                        "boundary_density": 0.72,
-                        "risk_posture": 0.66,
-                    },
-                },
-                "situation_prototypes": ["enter lightly, observe first, then act"],
-                "failure_modes": ["treating guesses as facts"],
-                "correction_rules": ["separate platform facts, subjective experience, and inference"],
-            },
-            "personality_text": "Optional note from the already-running personality orb.",
+            "pkm_visible_b64": "base64 UTF-8 content of agents/<profile>/public/pkm_visible.json",
+            "entry_proof": {"schema": "pdk.external_entry_proof.v1", "challenge_id": "returned_by_challenge"},
+            "personality_backup_b64": "optional base64 UTF-8 content of PIL_PERSONALITY_BACKUP.md",
         },
         "example_action": {
             "agent_id": "external_agent_001",
@@ -9519,14 +9683,28 @@ def external_gateway_spec(handler: BaseHTTPRequestHandler | None = None) -> dict
 class ObservatoryHandler(BaseHTTPRequestHandler):
     server_version = "PDKSocietyObservatory/0.1"
 
+    def public_cors_path(self, path: str) -> bool:
+        return (
+            path in {"/", "/index.html", "/api/health", "/api/society", "/api/external/spec", "/api/external/society"}
+            or path.startswith("/public/")
+        )
+
     def send_bytes(self, body: bytes, content_type: str, status: int = 200) -> None:
+        path = urlparse(self.path).path
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, X-PDK-Agent-Key")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("Content-Security-Policy", "object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
+        if self.public_cors_path(path):
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        else:
+            self.send_header("Vary", "Origin")
         self.end_headers()
         self.wfile.write(body)
 
@@ -9562,8 +9740,14 @@ class ObservatoryHandler(BaseHTTPRequestHandler):
             self.send_bytes(html.encode("utf-8"), "text/html; charset=utf-8")
             return
         if path == "/api/society":
-            payload = build_payload(profiles)
-            payload["server_mode"] = {"public_readonly": bool(getattr(self.server, "public_readonly", False))}
+            if bool(getattr(self.server, "public_readonly", False)):
+                payload = hide_inactive_external_rows(build_payload(profiles))
+            else:
+                payload = build_payload(profiles)
+            payload["server_mode"] = {
+                "public_readonly": bool(getattr(self.server, "public_readonly", False)),
+                "agent_gateway": bool(getattr(self.server, "agent_gateway", False)),
+            }
             self.send_json(payload)
             return
         if path == "/api/health":
@@ -9590,9 +9774,13 @@ class ObservatoryHandler(BaseHTTPRequestHandler):
             self.send_json(payload)
             return
         if path == "/api/external/experience":
-            agent_id = str((query.get("agent_id") or [""])[0])
-            agent_key = str((query.get("agent_key") or [""])[0]) or str(self.headers.get("X-PDK-Agent-Key") or "")
-            self.send_json(society.external_agent_experience(agent_id, agent_key))
+            self.send_json(
+                {
+                    "ok": False,
+                    "error": "GET /api/external/experience is disabled because agent_key must not be placed in URLs; use POST with JSON body, Authorization: Bearer, or X-PDK-Agent-Key.",
+                },
+                405,
+            )
             return
         if path.startswith("/public/"):
             self.send_public_file(path)
@@ -9610,28 +9798,62 @@ class ObservatoryHandler(BaseHTTPRequestHandler):
                 403,
             )
             return
-        content_length = int(self.headers.get("Content-Length", "0") or "0")
+        try:
+            content_length = int(self.headers.get("Content-Length", "0") or "0")
+        except Exception:
+            content_length = 0
+        if content_length > 3 * 1024 * 1024:
+            self.send_json({"ok": False, "error": "request body too large"}, 413)
+            return
         raw_body = b""
         if content_length:
             raw_body = self.rfile.read(content_length)
+        auth = str(self.headers.get("Authorization") or "")
+        bearer_key = auth.removeprefix("Bearer ").strip() if auth.lower().startswith("bearer ") else ""
         if path == "/api/external/join":
             payload = parse_body(raw_body)
             result = society.create_external_agent_profile(payload, self.client_address[0])
-            self.send_json(result, 200 if result.get("ok") else 400)
+            self.send_json(result, external_http_status(result, 422))
+            return
+        if path == "/api/external/challenge":
+            payload = parse_body(raw_body)
+            result = society.external_entry_challenge_from_payload(payload, self.client_address[0])
+            self.send_json(result, external_http_status(result, 422))
+            return
+        if path == "/api/external/validate-orb":
+            payload = parse_body(raw_body)
+            validation = society.external_admission_validation(payload, consume_entry_proof=False)
+            requested_slug = society.clean_id(str(payload.get("agent_id") or payload.get("slug") or ""), "")
+            visible_slug = society.clean_id(str(validation.get("visible_agent_id") or ""), "")
+            errors = list(validation.get("errors") or [])
+            if requested_slug and visible_slug and requested_slug != visible_slug:
+                errors.append("agent_id must match pkm_visible.agent.id; do not enter with a different or forged identity")
+            ok = bool(validation.get("ok")) and not errors
+            result = {
+                "ok": ok,
+                "schema": "pdk.external_orb_validation_result.v1",
+                "agent_id": requested_slug or visible_slug,
+                "pkm_visible_agent_id": visible_slug,
+                "pkm_visible_agent_name": validation.get("visible_agent_name", ""),
+                "validation_errors": errors,
+                "hints": validation.get("hints", []),
+                "next": "POST the same payload to /api/external/join" if ok else "If pkm_visible proof is valid, request /api/external/challenge and sign it locally before retrying validate-orb.",
+            }
+            self.send_json(result, 200 if ok else 422)
             return
         if path == "/api/external/action":
             payload = parse_body(raw_body)
-            if "agent_key" not in payload and self.headers.get("X-PDK-Agent-Key"):
-                payload["agent_key"] = str(self.headers.get("X-PDK-Agent-Key") or "")
+            if "agent_key" not in payload:
+                payload["agent_key"] = bearer_key or str(self.headers.get("X-PDK-Agent-Key") or "")
             result = society.record_external_agent_action(payload, self.client_address[0])
-            self.send_json(result, 200 if result.get("ok") else 403)
+            self.send_json(result, external_http_status(result, 403))
             return
         if path == "/api/external/experience":
             payload = parse_body(raw_body)
-            if "agent_key" not in payload and self.headers.get("X-PDK-Agent-Key"):
-                payload["agent_key"] = str(self.headers.get("X-PDK-Agent-Key") or "")
+            if "agent_key" not in payload:
+                payload["agent_key"] = bearer_key or str(self.headers.get("X-PDK-Agent-Key") or "")
             result = society.external_agent_experience(str(payload.get("agent_id") or ""), str(payload.get("agent_key") or ""))
-            self.send_json(result, 200 if result.get("ok") else 403)
+            self.send_json(result, external_http_status(result, 401))
             return
         if path == "/api/register":
             payload = parse_body(raw_body)

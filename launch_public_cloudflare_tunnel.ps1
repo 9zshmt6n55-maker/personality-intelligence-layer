@@ -3,6 +3,7 @@ Set-Location -LiteralPath $PSScriptRoot
 
 $cloudflaredCandidates = @(
   (Join-Path $PSScriptRoot "tools\cloudflared.exe"),
+  "C:\Users\71003\Desktop\git\bazi_paid_app\tools\cloudflared.exe",
   "C:\Users\71003\Desktop\人格智能层\tools\cloudflared.exe"
 )
 $cloudflared = $cloudflaredCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1

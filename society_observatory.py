@@ -9365,6 +9365,53 @@ def build_payload(profiles: str | list[str] | None = None) -> dict[str, Any]:
     }
 
 
+def hide_inactive_external_rows(payload: dict[str, Any]) -> dict[str, Any]:
+    """Return the public gateway view without agents who have left the platform."""
+    public_payload = dict(payload)
+    active_locations = [
+        location
+        for location in payload.get("locations", [])
+        if str(location.get("status") or "") not in {"left", "left_platform"}
+    ]
+    active_ids = {str(location.get("agent_id") or "") for location in active_locations if location.get("agent_id")}
+
+    def keep_agent_id(row: dict[str, Any], key: str = "agent_id") -> bool:
+        return str(row.get(key) or "") in active_ids
+
+    def keep_event(row: dict[str, Any]) -> bool:
+        from_agent = str(row.get("from_agent") or "")
+        to_agent = str(row.get("to_agent") or "")
+        return from_agent in active_ids or to_agent in active_ids
+
+    def keep_edge(row: dict[str, Any]) -> bool:
+        return str(row.get("from_agent") or "") in active_ids and str(row.get("to_agent") or "") in active_ids
+
+    public_payload["locations"] = active_locations
+    public_payload["agents"] = [row for row in payload.get("agents", []) if keep_agent_id(row)]
+    public_payload["gate_receipts"] = [row for row in payload.get("gate_receipts", []) if keep_agent_id(row)]
+    public_payload["capsules"] = [row for row in payload.get("capsules", []) if keep_agent_id(row)]
+    public_payload["skills"] = [row for row in payload.get("skills", []) if keep_agent_id(row, "owner_agent_id")]
+    public_payload["experiences"] = [row for row in payload.get("experiences", []) if keep_agent_id(row)]
+    public_payload["events"] = [row for row in payload.get("events", []) if keep_event(row)]
+    public_payload["relationships"] = [row for row in payload.get("relationships", []) if keep_edge(row)]
+    public_payload["reputation"] = [
+        row
+        for row in payload.get("reputation", [])
+        if str(row.get("subject_agent") or "") in active_ids or str(row.get("issuer_agent") or "") in active_ids
+    ]
+    public_payload["location_counts"] = {
+        str(venue): count
+        for venue, count in dict(payload.get("location_counts") or {}).items()
+        if count
+    }
+    summary = dict(payload.get("summary") or {})
+    summary["active_agent_count"] = len(active_ids)
+    summary["external_public_view"] = "active_agents_only"
+    public_payload["summary"] = summary
+    public_payload["agent_count"] = len(active_ids)
+    return public_payload
+
+
 def parse_body(raw_body: bytes) -> dict[str, Any]:
     if not raw_body:
         return {}
@@ -9535,7 +9582,7 @@ class ObservatoryHandler(BaseHTTPRequestHandler):
             self.send_json(external_gateway_spec(self))
             return
         if path == "/api/external/society":
-            payload = build_payload(profiles)
+            payload = hide_inactive_external_rows(build_payload(profiles))
             payload["server_mode"] = {
                 "public_readonly": bool(getattr(self.server, "public_readonly", False)),
                 "agent_gateway": bool(getattr(self.server, "agent_gateway", False)),

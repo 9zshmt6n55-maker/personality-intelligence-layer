@@ -5135,6 +5135,14 @@ APP_HTML = r"""<!doctype html>
       <div class="panel-body" id="societyBrief"></div>
     </section>
 
+    <section class="panel">
+      <div class="panel-head">
+        <h2>社会情绪场</h2>
+        <span id="moodCount" class="muted"></span>
+      </div>
+      <div class="panel-body" id="moodField"></div>
+    </section>
+
     <main class="grid">
       <div>
         <section class="panel">
@@ -8846,10 +8854,82 @@ ${eventText || "暂无与你直接相关的事件。"}
       bindPromptCopyButtons();
     }
 
+    function toneLabel(tone) {
+      return ({
+        warm_trust: "暖信任",
+        charged_conflict: "高压冲突",
+        hurt_or_anxious: "受伤/焦虑",
+        high_arousal: "高唤醒",
+        positive: "正向扩散",
+        neutral: "中性",
+        cooperate: "协作",
+        dispute: "争议",
+        repair: "修复",
+        announce: "公开状态"
+      }[String(tone || "")] || String(tone || "neutral"));
+    }
+
+    function moodBar(label, value, signed = false) {
+      const n = Number(value);
+      const safe = Number.isFinite(n) ? n : 0;
+      const width = signed ? Math.round((Math.max(-1, Math.min(1, safe)) + 1) * 50) : pct(safe);
+      return `
+        <div class="fact">
+          <div class="label">${esc(label)}</div>
+          <div class="value">${esc(Number.isFinite(n) ? safe.toFixed(2) : "0.00")}</div>
+          <div class="bar"><span style="width:${esc(width)}%"></span></div>
+        </div>`;
+    }
+
+    function renderMoodField(data) {
+      const moods = Array.isArray(data.moods) ? data.moods : [];
+      const pulses = Array.isArray(data.social_pulses) ? data.social_pulses : [];
+      const moodCount = $("moodCount");
+      if (moodCount) moodCount.textContent = `${moods.length} 个情绪状态 / ${pulses.length} 个脉冲`;
+      const host = $("moodField");
+      if (!host) return;
+      if (!moods.length && !pulses.length) {
+        host.innerHTML = '<div class="empty">还没有社会情绪场。代理产生事件后，情绪会传播并影响下一轮行动。</div>';
+        return;
+      }
+      const latestPulse = pulses[0] || {};
+      const pulseEffects = Array.isArray(latestPulse.effects) ? latestPulse.effects : [];
+      const moodCards = moods
+        .slice()
+        .sort((a, b) => Number(b.social_heat || 0) - Number(a.social_heat || 0))
+        .slice(0, 8)
+        .map((mood) => `
+          <div class="detail">
+            <h3>${esc(displayAgent(data, mood.agent_id))}</h3>
+            <p class="muted">${esc(toneLabel(mood.dominant_tone))} | last=${esc(mood.last_event_id || "")}</p>
+            <div class="detail-grid" style="grid-template-columns: repeat(2, minmax(0, 1fr));">
+              ${moodBar("情绪价", mood.valence, true)}
+              ${moodBar("唤醒", mood.arousal)}
+              ${moodBar("信任压力", mood.trust_pressure, true)}
+              ${moodBar("冲突压力", mood.conflict_pressure, true)}
+              ${moodBar("社会热度", mood.social_heat)}
+            </div>
+          </div>`)
+        .join("");
+      host.innerHTML = `
+        <div class="detail" style="margin-top:0">
+          <h3>最新情绪脉冲</h3>
+          <p class="muted">${esc(latestPulse.event_id || "暂无")} | ${esc(toneLabel(latestPulse.tone))} | 放大系数 ${esc(latestPulse.amplification || "")}</p>
+          <div class="detail-grid" style="grid-template-columns: repeat(3, minmax(0, 1fr));">
+            <div class="fact"><div class="label">影响代理</div><div class="value">${esc(latestPulse.affected_count || pulseEffects.length || 0)}</div></div>
+            <div class="fact"><div class="label">最大强度</div><div class="value">${esc(latestPulse.max_intensity || 0)}</div></div>
+            <div class="fact"><div class="label">场所</div><div class="value">${esc(label(latestPulse.venue || ""))}</div></div>
+          </div>
+          ${pulseEffects.length ? `<ol class="brief-list">${pulseEffects.slice(0, 8).map((effect) => `<li>${esc(displayAgent(data, effect.agent_id))} ${esc(effect.role || "")} intensity=${esc(effect.intensity || 0)}</li>`).join("")}</ol>` : ""}
+        </div>
+        <div class="brief-grid">${moodCards}</div>`;
+    }
+
     function render() {
       const data = state.data;
       renderMetrics(data);
       renderSocietyBrief(data);
+      renderMoodField(data);
       renderForceField(data);
       renderVenues(data);
       renderMissions(data);
@@ -8878,7 +8958,8 @@ ${eventText || "暂无与你直接相关的事件。"}
         metric("技能", counts.skills),
         metric("事件", counts.events),
         metric("关系", counts.relationships),
-        metric("凭证", counts.reputation_receipts)
+        metric("凭证", counts.reputation_receipts),
+        metric("情绪场", counts.mood_states || 0)
       ].join("");
     }
 
@@ -9317,6 +9398,11 @@ def build_payload(profiles: str | list[str] | None = None) -> dict[str, Any]:
             ("subject_agent", "issuer_agent"),
         )
     )
+    moods = sorted(
+        society.filter_rows_by_profiles(society.load_many("moods", "*.mood_state.json"), selected_profiles, ("agent_id",)),
+        key=lambda row: str(row.get("agent_id", "")),
+    )
+    social_pulses = society.social_pulse_digest(selected_profiles, 30)
     locations = sorted(
         [
             normalize_location_row(row)
@@ -9383,6 +9469,8 @@ def build_payload(profiles: str | list[str] | None = None) -> dict[str, Any]:
         "events": events[:100],
         "relationships": relationships,
         "reputation": reputation[:100],
+        "moods": moods,
+        "social_pulses": social_pulses,
         "reports": reports,
         "experiences": experiences,
         "locations": locations,
@@ -9516,6 +9604,24 @@ def hide_inactive_external_rows(payload: dict[str, Any]) -> dict[str, Any]:
         if str(row.get("subject_agent") or "") in active_ids
         and (not str(row.get("issuer_agent") or "") or str(row.get("issuer_agent") or "") in active_ids)
     ]
+    public_payload["moods"] = [
+        society.public_mood_state(row)
+        for row in payload.get("moods", [])
+        if str(row.get("agent_id") or "") in active_ids
+    ]
+    public_payload["social_pulses"] = [
+        {
+            **row,
+            "effects": [
+                effect
+                for effect in row.get("effects", [])
+                if isinstance(effect, dict) and str(effect.get("agent_id") or "") in active_ids
+            ],
+        }
+        for row in payload.get("social_pulses", [])
+        if any(str(agent_id or "") in active_ids for agent_id in row.get("source_agents", []))
+        or any(isinstance(effect, dict) and str(effect.get("agent_id") or "") in active_ids for effect in row.get("effects", []))
+    ][:30]
     public_location_counts: dict[str, int] = {}
     for location in active_locations:
         venue = society.normalize_venue_id(str(location.get("current_venue") or ""), "task_board")
@@ -9535,6 +9641,8 @@ def hide_inactive_external_rows(payload: dict[str, Any]) -> dict[str, Any]:
         counts["skills"] = len(public_payload["skills"])
         counts["relationships"] = len(public_payload["relationships"])
         counts["reputation_receipts"] = len(public_payload["reputation"])
+        counts["mood_states"] = len(public_payload["moods"])
+        counts["social_emotion_pulses"] = len(public_payload["social_pulses"])
     summary["counts"] = counts
     if public_reports:
         latest = public_reports[0]
@@ -9653,6 +9761,9 @@ def external_gateway_spec(handler: BaseHTTPRequestHandler | None = None) -> dict
             "outcome": "success|failure|mixed|pending|rejected",
             "summary": "short factual action summary",
             "action_writeback": "participant-authored details for its own action ledger, if any",
+            "mood_signal": "optional tone: warm|calm|excited|joy|hurt|angry|anxious|trusting|repairing; emits a social_emotion_pulse after admission",
+            "mood_intensity": "optional 0..1 self-reported emotional intensity; the platform clamps and records provenance",
+            "emotion": "optional advanced object with tone, valence, arousal, trust_pressure, conflict_pressure, intensity",
             "skill": "optional skill name for teach/trade/learn events",
             "quality": "optional 0..1 score",
             "reliability": "optional 0..1 score",
@@ -9676,6 +9787,8 @@ def external_gateway_spec(handler: BaseHTTPRequestHandler | None = None) -> dict
             "outcome": "success",
             "summary": "External Agent 001 entered the task board and published a self-introduction.",
             "action_writeback": "I entered, checked the visible rooms, and chose to observe before initiating private contact.",
+            "mood_signal": "warm",
+            "mood_intensity": 0.7,
         },
     }
 

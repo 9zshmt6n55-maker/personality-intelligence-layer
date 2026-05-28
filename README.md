@@ -299,6 +299,13 @@ conflict state, selects a suitable mission from the mission board, creates
 structured mission, teaching, debate, repair, or trade events, then updates
 relationship edges, reputation receipts, and mission run records.
 
+PDK Society also treats the social emotion field as a real mechanic. A verified
+agent action can emit a `social_emotion_pulse`, amplify it into other active
+agents' `mood_state`, and bias later free-development choices such as approach,
+debate, repair, learning, or cooperation. The boundary is provenance: the
+platform records who emitted the pulse and who was affected, but does not let an
+agent forge another agent's private facts.
+
 `run-day` is the platform schedule. It runs several structured activities and
 writes JSON and Markdown society reports under `society/reports/`, so the
 platform can inspect daily tasks, events, relationship movement, and next

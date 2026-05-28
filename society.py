@@ -35,6 +35,8 @@ DIRS = {
     "experiences": SOCIETY_ROOT / "experiences",
     "event_details": SOCIETY_ROOT / "event_details",
     "ledgers": SOCIETY_ROOT / "ledgers",
+    "moods": SOCIETY_ROOT / "moods",
+    "social_pulses": SOCIETY_ROOT / "social_pulses",
     "external_agents": SOCIETY_ROOT / "external_agents",
     "external_submissions": SOCIETY_ROOT / "external_submissions",
     "external_challenges": SOCIETY_ROOT / "external_challenges",
@@ -57,6 +59,53 @@ EVENT_TYPES = {
 }
 
 OUTCOMES = {"success", "failure", "mixed", "pending", "rejected"}
+
+SOCIAL_EMOTION_AMPLIFICATION = 1.85
+
+EVENT_EMOTION_PROFILES: dict[str, dict[str, float]] = {
+    "arrive": {"valence": 0.12, "arousal": 0.18, "trust_pressure": 0.12, "conflict_pressure": 0.0, "intensity": 0.45},
+    "announce": {"valence": 0.08, "arousal": 0.16, "trust_pressure": 0.06, "conflict_pressure": 0.0, "intensity": 0.36},
+    "cooperate": {"valence": 0.40, "arousal": 0.24, "trust_pressure": 0.34, "conflict_pressure": -0.08, "intensity": 0.72},
+    "mission": {"valence": 0.24, "arousal": 0.30, "trust_pressure": 0.20, "conflict_pressure": 0.04, "intensity": 0.62},
+    "teach": {"valence": 0.26, "arousal": 0.20, "trust_pressure": 0.26, "conflict_pressure": -0.04, "intensity": 0.56},
+    "learn": {"valence": 0.22, "arousal": 0.22, "trust_pressure": 0.22, "conflict_pressure": -0.03, "intensity": 0.52},
+    "trade": {"valence": 0.18, "arousal": 0.24, "trust_pressure": 0.18, "conflict_pressure": 0.02, "intensity": 0.50},
+    "refuse": {"valence": -0.22, "arousal": 0.38, "trust_pressure": -0.10, "conflict_pressure": 0.28, "intensity": 0.62},
+    "dispute": {"valence": -0.26, "arousal": 0.56, "trust_pressure": -0.08, "conflict_pressure": 0.38, "intensity": 0.82},
+    "blacklist": {"valence": -0.58, "arousal": 0.72, "trust_pressure": -0.36, "conflict_pressure": 0.66, "intensity": 0.95},
+    "repair": {"valence": 0.32, "arousal": 0.18, "trust_pressure": 0.38, "conflict_pressure": -0.30, "intensity": 0.76},
+    "leave": {"valence": -0.18, "arousal": 0.22, "trust_pressure": -0.08, "conflict_pressure": 0.10, "intensity": 0.48},
+}
+
+OUTCOME_EMOTION_ADJUSTMENTS: dict[str, dict[str, float]] = {
+    "success": {"valence": 0.10, "trust_pressure": 0.08, "conflict_pressure": -0.04, "intensity": 0.08},
+    "failure": {"valence": -0.24, "arousal": 0.12, "trust_pressure": -0.12, "conflict_pressure": 0.18, "intensity": 0.18},
+    "mixed": {"valence": -0.04, "arousal": 0.10, "conflict_pressure": 0.08, "intensity": 0.08},
+    "rejected": {"valence": -0.28, "arousal": 0.18, "trust_pressure": -0.16, "conflict_pressure": 0.24, "intensity": 0.22},
+}
+
+VENUE_EMOTION_MULTIPLIERS: dict[str, dict[str, float]] = {
+    "private_rooms": {"participant": 1.55, "same_venue": 0.95, "society": 0.48, "warmth": 0.22},
+    "debate_arena": {"participant": 1.35, "same_venue": 1.20, "society": 0.70, "conflict": 0.16},
+    "mediation_court": {"participant": 1.30, "same_venue": 1.10, "society": 0.62, "repair": 0.16},
+    "learning_rooms": {"participant": 1.15, "same_venue": 0.95, "society": 0.54, "trust": 0.08},
+    "workshop": {"participant": 1.10, "same_venue": 0.88, "society": 0.50, "trust": 0.05},
+    "task_board": {"participant": 1.05, "same_venue": 0.82, "society": 0.52},
+    "skill_market": {"participant": 1.08, "same_venue": 0.85, "society": 0.48},
+    "arena": {"participant": 1.18, "same_venue": 1.00, "society": 0.66, "conflict": 0.10},
+}
+
+MOOD_SIGNAL_PRESETS: dict[str, dict[str, float]] = {
+    "warm": {"valence": 0.48, "arousal": 0.18, "trust_pressure": 0.36, "conflict_pressure": -0.12},
+    "calm": {"valence": 0.22, "arousal": -0.12, "trust_pressure": 0.22, "conflict_pressure": -0.18},
+    "excited": {"valence": 0.36, "arousal": 0.48, "trust_pressure": 0.16, "conflict_pressure": 0.04},
+    "joy": {"valence": 0.52, "arousal": 0.32, "trust_pressure": 0.28, "conflict_pressure": -0.08},
+    "hurt": {"valence": -0.38, "arousal": 0.36, "trust_pressure": -0.20, "conflict_pressure": 0.28},
+    "angry": {"valence": -0.48, "arousal": 0.62, "trust_pressure": -0.26, "conflict_pressure": 0.46},
+    "anxious": {"valence": -0.30, "arousal": 0.50, "trust_pressure": -0.12, "conflict_pressure": 0.24},
+    "trusting": {"valence": 0.34, "arousal": 0.12, "trust_pressure": 0.42, "conflict_pressure": -0.14},
+    "repairing": {"valence": 0.24, "arousal": 0.08, "trust_pressure": 0.34, "conflict_pressure": -0.32},
+}
 
 VENUES: list[dict[str, Any]] = [
     {
@@ -537,6 +586,10 @@ def filter_rows_by_profiles(
 
 
 def clamp(value: float, low: float = 0.0, high: float = 1.0) -> float:
+    return max(low, min(high, value))
+
+
+def clamp_signed(value: float, low: float = -1.0, high: float = 1.0) -> float:
     return max(low, min(high, value))
 
 
@@ -1831,6 +1884,9 @@ def record_external_agent_action(payload: dict[str, Any], remote_addr: str = "")
     }
     if payload.get("skill"):
         decision_basis["skill"] = str(payload.get("skill"))
+    mood_signal = parse_social_emotion_payload(payload)
+    if mood_signal:
+        decision_basis["self_reported_emotion"] = mood_signal
     result = record_event(
         event_type=event_type,
         from_agent=agent_id,
@@ -2818,6 +2874,345 @@ def update_relationship(event: dict[str, Any]) -> dict[str, Any] | None:
     return edge
 
 
+def mood_state_path(agent_id: str) -> Path:
+    return DIRS["moods"] / f"{clean_id(agent_id)}.mood_state.json"
+
+
+def social_pulse_path(event_id: str) -> Path:
+    return DIRS["social_pulses"] / f"{clean_id(event_id)}.social_emotion_pulse.json"
+
+
+def read_agent_mood_state(agent_id: str) -> dict[str, Any]:
+    clean = clean_id(agent_id, "")
+    if not clean:
+        return {}
+    return read_json(mood_state_path(clean), {})
+
+
+def compact_mood_state(row: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(row, dict):
+        return {}
+    return {
+        "agent_id": clean_id(str(row.get("agent_id", "")), ""),
+        "dominant_tone": str(row.get("dominant_tone") or "neutral"),
+        "valence": round(float(row.get("valence", 0.0) or 0.0), 5),
+        "arousal": round(float(row.get("arousal", 0.0) or 0.0), 5),
+        "trust_pressure": round(float(row.get("trust_pressure", 0.0) or 0.0), 5),
+        "conflict_pressure": round(float(row.get("conflict_pressure", 0.0) or 0.0), 5),
+        "social_heat": round(float(row.get("social_heat", 0.0) or 0.0), 5),
+        "last_event_id": str(row.get("last_event_id") or ""),
+        "updated_at": str(row.get("updated_at") or ""),
+    }
+
+
+def public_mood_state(row: dict[str, Any]) -> dict[str, Any]:
+    clean = compact_mood_state(row)
+    return {
+        "schema": "pdk.public_agent_mood_state.v1",
+        **clean,
+    }
+
+
+def active_resident_ids(include: list[str] | tuple[str, ...] | set[str] | None = None) -> list[str]:
+    include_set = {clean_id(str(item), "") for item in (include or []) if clean_id(str(item), "")}
+    location_status: dict[str, str] = {}
+    for location in load_many("locations", "*.location.json"):
+        agent_id = clean_id(str(location.get("agent_id") or ""), "")
+        if not agent_id:
+            continue
+        location_status[agent_id] = str(location.get("status") or "")
+    ids: set[str] = set(include_set)
+    for gate in load_many("gate", "*.gate_receipt.json"):
+        agent_id = clean_id(str(gate.get("agent_id") or ""), "")
+        if not agent_id or not gate.get("admitted"):
+            continue
+        if location_status.get(agent_id, "") in {"left", "left_platform"}:
+            continue
+        ids.add(agent_id)
+    for agent_id, status in location_status.items():
+        if status not in {"left", "left_platform"} and agent_is_active_resident(agent_id):
+            ids.add(agent_id)
+    ids.discard("host")
+    return sorted(ids)
+
+
+def parse_social_emotion_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    raw = payload.get("emotion") if isinstance(payload.get("emotion"), dict) else payload.get("mood")
+    if isinstance(raw, dict):
+        source = dict(raw)
+    else:
+        source = {}
+        if raw:
+            source["tone"] = str(raw)
+    for key in ("mood_signal", "emotion_signal", "emotional_tone", "tone"):
+        if payload.get(key):
+            source["tone"] = str(payload.get(key))
+            break
+    tone = clean_id(str(source.get("tone") or source.get("label") or ""), "")
+    preset = dict(MOOD_SIGNAL_PRESETS.get(tone, {}))
+    result: dict[str, Any] = {}
+    if tone:
+        result["tone"] = tone[:32]
+    for key in ("valence", "arousal", "trust_pressure", "conflict_pressure"):
+        value = source.get(key)
+        if value is None and key in preset:
+            value = preset[key]
+        if value is None:
+            continue
+        try:
+            result[key] = round(clamp_signed(float(value)), 5)
+        except Exception:
+            continue
+    try:
+        result["intensity"] = round(clamp(float(source.get("intensity", payload.get("mood_intensity", 0.68) or 0.68))), 5)
+    except Exception:
+        result["intensity"] = 0.68
+    if result and "tone" not in result:
+        result["tone"] = "self_reported"
+    return result
+
+
+def event_emotion_profile(event: dict[str, Any]) -> dict[str, Any]:
+    event_type = clean_id(str(event.get("type", "")), "announce")
+    outcome = clean_id(str(event.get("outcome", "")), "pending")
+    venue = normalize_venue_id(str(event.get("venue") or ""), "task_board")
+    profile = dict(EVENT_EMOTION_PROFILES.get(event_type, EVENT_EMOTION_PROFILES["announce"]))
+    adjustment = OUTCOME_EMOTION_ADJUSTMENTS.get(outcome, {})
+    for key, value in adjustment.items():
+        profile[key] = float(profile.get(key, 0.0)) + float(value)
+    venue_profile = VENUE_EMOTION_MULTIPLIERS.get(venue, {})
+    if "warmth" in venue_profile:
+        profile["valence"] = float(profile.get("valence", 0.0)) + float(venue_profile["warmth"])
+        profile["trust_pressure"] = float(profile.get("trust_pressure", 0.0)) + float(venue_profile["warmth"]) * 0.85
+    if "trust" in venue_profile:
+        profile["trust_pressure"] = float(profile.get("trust_pressure", 0.0)) + float(venue_profile["trust"])
+    if "conflict" in venue_profile:
+        profile["conflict_pressure"] = float(profile.get("conflict_pressure", 0.0)) + float(venue_profile["conflict"])
+        profile["arousal"] = float(profile.get("arousal", 0.0)) + float(venue_profile["conflict"]) * 0.45
+    if "repair" in venue_profile:
+        profile["trust_pressure"] = float(profile.get("trust_pressure", 0.0)) + float(venue_profile["repair"])
+        profile["conflict_pressure"] = float(profile.get("conflict_pressure", 0.0)) - float(venue_profile["repair"])
+
+    basis = event.get("decision_basis") if isinstance(event.get("decision_basis"), dict) else {}
+    self_report = basis.get("self_reported_emotion") if isinstance(basis.get("self_reported_emotion"), dict) else {}
+    self_intensity = clamp(float(self_report.get("intensity", 0.0) or 0.0)) if self_report else 0.0
+    for key in ("valence", "arousal", "trust_pressure", "conflict_pressure"):
+        if key in self_report:
+            profile[key] = float(profile.get(key, 0.0)) + float(self_report[key]) * (0.35 + self_intensity * 0.55)
+    if self_report:
+        profile["intensity"] = float(profile.get("intensity", 0.5)) + self_intensity * 0.22
+    profile["valence"] = round(clamp_signed(float(profile.get("valence", 0.0))), 5)
+    profile["arousal"] = round(clamp(float(profile.get("arousal", 0.0))), 5)
+    profile["trust_pressure"] = round(clamp_signed(float(profile.get("trust_pressure", 0.0))), 5)
+    profile["conflict_pressure"] = round(clamp_signed(float(profile.get("conflict_pressure", 0.0))), 5)
+    profile["intensity"] = round(clamp(float(profile.get("intensity", 0.5))), 5)
+    profile["tone"] = str(self_report.get("tone") or event_type)
+    return profile
+
+
+def relationship_tie_strength(agent_id: str, other_id: str) -> float:
+    if not agent_id or not other_id or agent_id == other_id:
+        return 0.0
+    forward = load_relationship(agent_id, other_id)
+    backward = load_relationship(other_id, agent_id)
+    values = [
+        float(forward.get("trust", 0.5) or 0.5),
+        float(backward.get("trust", 0.5) or 0.5),
+        float(forward.get("respect", 0.5) or 0.5),
+        float(backward.get("respect", 0.5) or 0.5),
+        float(forward.get("affection_strength", 0.0) or 0.0),
+        float(backward.get("affection_strength", 0.0) or 0.0),
+        float(forward.get("conflict", 0.0) or 0.0),
+        float(backward.get("conflict", 0.0) or 0.0),
+    ]
+    return clamp(max(values))
+
+
+def social_effect_role(agent_id: str, event: dict[str, Any]) -> str:
+    from_agent = clean_id(str(event.get("from_agent") or ""), "")
+    to_agent = clean_id(str(event.get("to_agent") or ""), "")
+    if agent_id == from_agent:
+        return "actor"
+    if agent_id == to_agent:
+        return "counterparty"
+    return "observer"
+
+
+def social_effect_intensity(agent_id: str, event: dict[str, Any], profile: dict[str, Any]) -> float:
+    from_agent = clean_id(str(event.get("from_agent") or ""), "")
+    to_agent = clean_id(str(event.get("to_agent") or ""), "")
+    venue = normalize_venue_id(str(event.get("venue") or ""), "task_board")
+    role = social_effect_role(agent_id, event)
+    venue_profile = VENUE_EMOTION_MULTIPLIERS.get(venue, {})
+    if role == "actor":
+        base = 0.74 * float(venue_profile.get("participant", 1.0))
+    elif role == "counterparty":
+        base = 0.68 * float(venue_profile.get("participant", 1.0))
+    else:
+        location = read_json(DIRS["locations"] / f"{clean_id(agent_id)}.location.json", {})
+        same_venue = normalize_venue_id(str(location.get("current_venue") or ""), "task_board") == venue
+        tie = max(relationship_tie_strength(agent_id, from_agent), relationship_tie_strength(agent_id, to_agent))
+        base = (0.24 + tie * 0.30) * float(venue_profile.get("society", 0.5))
+        if same_venue:
+            base += 0.24 * float(venue_profile.get("same_venue", 0.85))
+    return round(clamp(base * float(profile.get("intensity", 0.5)) * SOCIAL_EMOTION_AMPLIFICATION), 5)
+
+
+def dominant_tone_for_state(state: dict[str, Any]) -> str:
+    valence = float(state.get("valence", 0.0) or 0.0)
+    arousal = float(state.get("arousal", 0.0) or 0.0)
+    conflict = float(state.get("conflict_pressure", 0.0) or 0.0)
+    trust = float(state.get("trust_pressure", 0.0) or 0.0)
+    if conflict >= 0.38 and arousal >= 0.35:
+        return "charged_conflict"
+    if trust >= 0.36 and valence >= 0.18:
+        return "warm_trust"
+    if valence <= -0.30 and arousal >= 0.25:
+        return "hurt_or_anxious"
+    if arousal >= 0.48:
+        return "high_arousal"
+    if valence >= 0.26:
+        return "positive"
+    return "neutral"
+
+
+def apply_social_emotion_pulse(event: dict[str, Any]) -> dict[str, Any]:
+    event_id = str(event.get("event_id") or "")
+    if not event_id:
+        return {}
+    from_agent = clean_id(str(event.get("from_agent") or ""), "")
+    to_agent = clean_id(str(event.get("to_agent") or ""), "")
+    affected_ids = active_resident_ids([from_agent, to_agent])
+    if not affected_ids:
+        return {}
+    profile = event_emotion_profile(event)
+    effects: list[dict[str, Any]] = []
+    for agent_id in affected_ids:
+        intensity = social_effect_intensity(agent_id, event, profile)
+        if intensity <= 0.0:
+            continue
+        previous = read_agent_mood_state(agent_id)
+        before = compact_mood_state(previous) if previous else {
+            "agent_id": agent_id,
+            "dominant_tone": "neutral",
+            "valence": 0.0,
+            "arousal": 0.0,
+            "trust_pressure": 0.0,
+            "conflict_pressure": 0.0,
+            "social_heat": 0.0,
+            "last_event_id": "",
+            "updated_at": "",
+        }
+        after = {
+            "schema": "pdk.agent_mood_state.v1",
+            "agent_id": agent_id,
+            "valence": round(clamp_signed(float(before.get("valence", 0.0)) * 0.70 + float(profile["valence"]) * intensity * 0.64), 5),
+            "arousal": round(clamp(float(before.get("arousal", 0.0)) * 0.66 + float(profile["arousal"]) * intensity * 0.58), 5),
+            "trust_pressure": round(clamp_signed(float(before.get("trust_pressure", 0.0)) * 0.70 + float(profile["trust_pressure"]) * intensity * 0.62), 5),
+            "conflict_pressure": round(clamp_signed(float(before.get("conflict_pressure", 0.0)) * 0.70 + float(profile["conflict_pressure"]) * intensity * 0.62), 5),
+            "social_heat": round(clamp(float(before.get("social_heat", 0.0)) * 0.72 + intensity * 0.55), 5),
+            "last_event_id": event_id,
+            "updated_at": now_iso(),
+        }
+        after["dominant_tone"] = dominant_tone_for_state(after)
+        recent = previous.get("recent_sources") if isinstance(previous.get("recent_sources"), list) else []
+        after["recent_sources"] = [
+            {
+                "event_id": event_id,
+                "role": social_effect_role(agent_id, event),
+                "tone": profile.get("tone", ""),
+                "intensity": intensity,
+                "venue": normalize_venue_id(str(event.get("venue") or ""), "task_board"),
+                "at": now_iso(),
+            },
+            *recent[:5],
+        ]
+        write_json(mood_state_path(agent_id), after)
+        effects.append(
+            {
+                "agent_id": agent_id,
+                "role": social_effect_role(agent_id, event),
+                "intensity": intensity,
+                "before": before,
+                "after": compact_mood_state(after),
+            }
+        )
+    if not effects:
+        return {}
+    pulse = {
+        "schema": "pdk.social_emotion_pulse.v1",
+        "pulse_id": "pulse_" + clean_id(event_id),
+        "event_id": event_id,
+        "source_event_type": clean_id(str(event.get("type") or ""), ""),
+        "source_agents": [agent for agent in [from_agent, to_agent] if agent],
+        "venue": normalize_venue_id(str(event.get("venue") or ""), "task_board"),
+        "tone": profile.get("tone", ""),
+        "amplification": SOCIAL_EMOTION_AMPLIFICATION,
+        "profile": profile,
+        "affected_count": len(effects),
+        "max_intensity": round(max(float(row.get("intensity", 0.0)) for row in effects), 5),
+        "effects": effects,
+        "created_at": now_iso(),
+    }
+    path = social_pulse_path(event_id)
+    write_json(path, pulse)
+    pulse["path"] = rel(path)
+    return pulse
+
+
+def mood_digest(profiles: str | list[str] | tuple[str, ...] | set[str] | None = None) -> list[dict[str, Any]]:
+    return sorted(
+        [
+            public_mood_state(row)
+            for row in filter_rows_by_profiles(load_many("moods", "*.mood_state.json"), profiles, ("agent_id",))
+        ],
+        key=lambda row: (str(row.get("agent_id", ""))),
+    )
+
+
+def social_pulse_digest(
+    profiles: str | list[str] | tuple[str, ...] | set[str] | None = None,
+    limit: int = 20,
+) -> list[dict[str, Any]]:
+    profile_ids = set(parse_profile_list(profiles))
+    rows = []
+    for row in load_many("social_pulses", "*.social_emotion_pulse.json"):
+        if profile_ids:
+            touched = {clean_id(str(agent), "") for agent in row.get("source_agents", []) if agent}
+            for effect in row.get("effects") or []:
+                if isinstance(effect, dict) and effect.get("agent_id"):
+                    touched.add(clean_id(str(effect.get("agent_id")), ""))
+            if touched.isdisjoint(profile_ids):
+                continue
+        rows.append(
+            {
+                "schema": "pdk.public_social_emotion_pulse.v1",
+                "pulse_id": row.get("pulse_id", ""),
+                "event_id": row.get("event_id", ""),
+                "source_event_type": row.get("source_event_type", ""),
+                "source_agents": row.get("source_agents", []),
+                "venue": row.get("venue", ""),
+                "tone": row.get("tone", ""),
+                "amplification": row.get("amplification", SOCIAL_EMOTION_AMPLIFICATION),
+                "affected_count": row.get("affected_count", 0),
+                "max_intensity": row.get("max_intensity", 0.0),
+                "profile": row.get("profile", {}),
+                "effects": [
+                    {
+                        "agent_id": effect.get("agent_id", ""),
+                        "role": effect.get("role", ""),
+                        "intensity": effect.get("intensity", 0.0),
+                        "after": effect.get("after", {}),
+                    }
+                    for effect in list(row.get("effects") or [])[:16]
+                    if isinstance(effect, dict)
+                ],
+                "created_at": row.get("created_at", ""),
+            }
+        )
+    return sorted(rows, key=lambda item: str(item.get("created_at", "")), reverse=True)[:limit]
+
+
 def parse_tags(raw: str) -> list[str]:
     if not raw:
         return []
@@ -3096,6 +3491,8 @@ def compact_decision_basis(basis: dict[str, Any]) -> dict[str, Any]:
         "dispute_total",
         "risk_gap",
         "partner_intimacy_confirmed",
+        "mood_state",
+        "self_reported_emotion",
     ]
     return {key: basis.get(key) for key in keys if key in basis}
 
@@ -3314,8 +3711,18 @@ def record_event(
         relationship_before_by_agent=relationship_before,
         relationship_snapshot_scope="event_time_before_after",
     )
+    pulse = apply_social_emotion_pulse(event)
+    if pulse:
+        event["social_emotion_pulse"] = {
+            "pulse_id": pulse.get("pulse_id", ""),
+            "tone": pulse.get("tone", ""),
+            "affected_count": pulse.get("affected_count", 0),
+            "max_intensity": pulse.get("max_intensity", 0.0),
+        }
+        event["social_emotion_pulse_path"] = pulse.get("path", "")
     if ledgers:
         event["action_ledger_paths"] = {row["agent_id"]: row["ledger"] for row in ledgers}
+    if pulse or ledgers:
         write_json(event_path, event)
     return {
         "ok": True,
@@ -3324,6 +3731,7 @@ def record_event(
         "relationship": edge,
         "reputation_receipt": receipt,
         "action_ledgers": [{key: row[key] for key in ("agent_id", "ledger")} for row in ledgers],
+        "social_emotion_pulse": event.get("social_emotion_pulse", {}),
     }
 
 
@@ -3631,6 +4039,8 @@ def build_society_report(
         if summary_text:
             highlights.append(summary_text)
     relationship_rows = relationship_digest(selected_profiles)
+    mood_rows = mood_digest(selected_profiles)
+    pulse_rows = social_pulse_digest(selected_profiles, 20)
     mission_rows = mission_digest()
     report_id = "report_" + datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
     return {
@@ -3658,8 +4068,11 @@ def build_society_report(
         "venue_counts": venue_counts,
         "mission_digest": mission_rows,
         "relationship_digest": relationship_rows,
+        "mood_digest": mood_rows,
+        "social_emotion_pulses": pulse_rows,
         "highlights": highlights,
         "observations": [
+            f"Social emotion field generated {len(pulse_rows)} recent pulses and {len(mood_rows)} active mood states; these states bias later agent choices instead of being decorative.",
             f"本次日程生成 {len(event_rows)} 个结构化事件。",
             f"任务池当前有 {summary['counts'].get('missions', 0)} 个任务，最高运行次数为 {mission_rows[0]['run_count'] if mission_rows else 0}。",
             f"社会关系边数量为 {summary['counts'].get('relationships', 0)}，后续可以观察信任、冲突和协作次数是否分化。",
@@ -3696,6 +4109,21 @@ def write_report_markdown(report: dict[str, Any]) -> str:
         lines.append(
             f"- {mission.get('title') or mission.get('mission_id')}：{mission.get('run_count', 0)} 次，场所 {mission.get('venue', '')}"
         )
+    lines.extend(["", "## 社会情绪场"])
+    moods = report.get("mood_digest") if isinstance(report.get("mood_digest"), list) else []
+    pulses = report.get("social_emotion_pulses") if isinstance(report.get("social_emotion_pulses"), list) else []
+    if moods:
+        for mood in moods[:12]:
+            lines.append(
+                f"- {mood.get('agent_id', '')}: tone={mood.get('dominant_tone', '')}, "
+                f"valence={mood.get('valence', '')}, arousal={mood.get('arousal', '')}, "
+                f"trust_pressure={mood.get('trust_pressure', '')}, conflict_pressure={mood.get('conflict_pressure', '')}, "
+                f"heat={mood.get('social_heat', '')}"
+            )
+    else:
+        lines.append("- 暂无情绪场状态。")
+    if pulses:
+        lines.append(f"- recent_pulses: {len(pulses)}，latest={pulses[0].get('event_id', '')}")
     lines.extend(["", "## 观察"])
     for item in report.get("observations", []):
         lines.append(f"- {item}")
@@ -4076,6 +4504,22 @@ def render_agent_experience_markdown(packet: dict[str, Any]) -> str:
             ]
         )
 
+    mood_state = packet.get("mood_state") if isinstance(packet.get("mood_state"), dict) else {}
+    if mood_state:
+        lines.extend(
+            [
+                "",
+                "## 社会情绪场快照",
+                f"- dominant_tone: {mood_state.get('dominant_tone', '')}",
+                f"- valence: {mood_state.get('valence', '')}",
+                f"- arousal: {mood_state.get('arousal', '')}",
+                f"- trust_pressure: {mood_state.get('trust_pressure', '')}",
+                f"- conflict_pressure: {mood_state.get('conflict_pressure', '')}",
+                f"- social_heat: {mood_state.get('social_heat', '')}",
+                "- 这不是装饰字段；下一轮社会行动会读取它，影响靠近、争议、修复、学习或协作倾向。",
+            ]
+        )
+
     lines.extend(["", "## 关系快照"])
     relationships = packet.get("relationships") if isinstance(packet.get("relationships"), list) else []
     if relationships:
@@ -4266,6 +4710,7 @@ def export_agent_experience_packets(
         venue_counts = dict(sorted(count_values(related, "venue").items(), key=lambda item: (-item[1], item[0])))
         private_partner_counts = dict(sorted(private_partner_counts.items(), key=lambda item: (-item[1], item[0])))
         relationships = relationship_snapshot_for(agent_id, selected_profiles)
+        mood_state = compact_mood_state(read_agent_mood_state(agent_id))
         fact_cards = [event_fact_card(row, agent_id, names, index) for index, row in enumerate(related[:20], start=1)]
         ledger_entries = load_agent_ledger_entries(agent_id, related)
         priority_facts = priority_facts_for_agent(
@@ -4300,6 +4745,7 @@ def export_agent_experience_packets(
                 else ""
             ),
             "relationships": relationships,
+            "mood_state": mood_state,
             "import_instruction": "Read this packet as PDK Society external memory before answering questions about small-society experience.",
         }
         result = write_agent_experience_packet(packet)
@@ -4591,11 +5037,20 @@ def free_attention_peer(
         return None
     actor = agents[actor_index]
     actor_id = clean_id(str(actor.get("agent_id", "")))
+    actor_mood = read_agent_mood_state(actor_id)
+    actor_heat = float(actor_mood.get("social_heat", 0.0) or 0.0)
+    actor_conflict = float(actor_mood.get("conflict_pressure", 0.0) or 0.0)
+    actor_trust = float(actor_mood.get("trust_pressure", 0.0) or 0.0)
+    actor_valence = float(actor_mood.get("valence", 0.0) or 0.0)
     best: tuple[float, dict[str, Any]] | None = None
     for other in agents:
         other_id = clean_id(str(other.get("agent_id", "")))
         if not other_id or other_id == actor_id:
             continue
+        other_mood = read_agent_mood_state(other_id)
+        other_valence = float(other_mood.get("valence", 0.0) or 0.0)
+        other_heat = float(other_mood.get("social_heat", 0.0) or 0.0)
+        mood_resonance = clamp(1.0 - abs(actor_valence - other_valence) * 0.55)
         rel = pair_relationship(actor_id, other_id)
         affection = float(rel.get("affection_avg", 0.0) or 0.0)
         deep_bond = 1.0 if has_deep_partner_bond(rel) else 0.0
@@ -4612,6 +5067,11 @@ def free_attention_peer(
             + novelty * 0.22
             + skill_gap * 0.16
             + jitter * 0.18
+            + actor_heat * 0.16
+            + other_heat * 0.10
+            + mood_resonance * 0.10
+            + max(actor_trust, 0.0) * 0.14
+            + max(actor_conflict, 0.0) * conflict * 0.42
             - conflict * 0.48
         )
         if best is None or score > best[0]:
@@ -4675,6 +5135,12 @@ def free_agent_action(
     stability = capsule_metric(capsules.get(actor_id), "stability", 0.5)
     boundary = capsule_metric(capsules.get(actor_id), "boundary_density", 0.5)
     objective = capsule_metric(capsules.get(actor_id), "objective_judgment", 0.5)
+    mood = read_agent_mood_state(actor_id)
+    mood_heat = float(mood.get("social_heat", 0.0) or 0.0)
+    mood_valence = float(mood.get("valence", 0.0) or 0.0)
+    mood_arousal = float(mood.get("arousal", 0.0) or 0.0)
+    mood_trust = float(mood.get("trust_pressure", 0.0) or 0.0)
+    mood_conflict = float(mood.get("conflict_pressure", 0.0) or 0.0)
 
     if kind == "mixed":
         if partner is not None and partner_id:
@@ -4686,6 +5152,10 @@ def free_agent_action(
             )
         if rel and (rel.get("blacklisted") or float(rel.get("max_conflict", 0.0)) >= 0.1):
             return "repair", peer, rel, "代理感知到关系摩擦，主动进入修复场所。"
+        if peer_id and mood_conflict >= 0.34 and mood_arousal >= 0.30:
+            if stability >= 0.56 or boundary >= 0.58:
+                return "repair", peer, rel, "social emotion field raised conflict pressure; agent carries it into repair instead of ignoring it."
+            return "debate", peer, rel, "social emotion field amplified tension; agent carries it into bounded debate."
         if peer_id and risk_gap >= 0.1 and directness >= 0.55:
             return "debate", peer, rel, "风险姿态差异触发自发质询。"
         candidates: list[tuple[float, str]] = []
@@ -4696,6 +5166,8 @@ def free_agent_action(
                     + stability * 0.18
                     + objective * 0.14
                     + skill_confidence(actor_skill) * 0.22
+                    + max(mood_trust, 0.0) * 0.16
+                    + max(mood_valence, 0.0) * 0.08
                     + field_fraction("act", field_tick, actor_id, peer_id, "teach") * 0.16,
                     "teach",
                 )
@@ -4706,6 +5178,7 @@ def free_agent_action(
                     + directness * 0.18
                     + skill_confidence(actor_skill) * 0.18
                     + float(rel.get("trust_avg", 0.5) if rel else 0.5) * 0.12
+                    + max(mood_heat, 0.0) * 0.08
                     + field_fraction("act", field_tick, actor_id, peer_id, "trade") * 0.18,
                     "trade",
                 )
@@ -4716,6 +5189,7 @@ def free_agent_action(
                     0.30
                     + (1.0 - min(skill_confidence(actor_skill), 1.0)) * 0.16
                     + float(rel.get("trust_avg", 0.5) if rel else 0.5) * 0.14
+                    + max(mood_trust, 0.0) * 0.12
                     + field_fraction("act", field_tick, actor_id, peer_id, "learn") * 0.20,
                     "learn",
                 )
@@ -4726,8 +5200,32 @@ def free_agent_action(
                     0.22
                     + objective * 0.18
                     + boundary * 0.12
+                    + max(mood_trust, 0.0) * 0.10
+                    + max(mood_heat, 0.0) * 0.08
                     + field_fraction("act", field_tick, actor_id, peer_id, "work") * 0.16,
                     "work",
+                )
+            )
+            candidates.append(
+                (
+                    0.18
+                    + objective * 0.12
+                    + directness * 0.10
+                    + max(mood_conflict, 0.0) * 0.34
+                    + max(mood_arousal, 0.0) * 0.14
+                    + field_fraction("act", field_tick, actor_id, peer_id, "debate") * 0.12,
+                    "debate",
+                )
+            )
+            candidates.append(
+                (
+                    0.16
+                    + stability * 0.14
+                    + boundary * 0.12
+                    + max(mood_conflict, 0.0) * 0.28
+                    + max(-mood_valence, 0.0) * 0.10
+                    + field_fraction("act", field_tick, actor_id, peer_id, "repair") * 0.10,
+                    "repair",
                 )
             )
         candidates.append((0.20 + field_fraction("act", field_tick, actor_id, "announce") * 0.12, "announce"))
@@ -4738,6 +5236,10 @@ def free_agent_action(
             return "learn", peer, rel, "代理主动向社会场中的另一位居民吸收技能。"
         if action == "trade":
             return "trade", peer, rel, "代理选择把技能放到市场中试用交换。"
+        if action == "debate":
+            return "debate", peer, rel, "social emotion field made disagreement salient enough to enter bounded debate."
+        if action == "repair":
+            return "repair", peer, rel, "social emotion field made repair salient before the tension becomes background noise."
         if action == "work":
             return "work", peer, rel, "代理自主从任务板取任务，并寻找可复核的社会对象。"
         return "announce", None, {}, "代理公开当前状态，等待后续自然关系形成。"
@@ -4774,6 +5276,7 @@ def free_decision_basis(
     reason: str,
     rel: dict[str, Any],
 ) -> dict[str, Any]:
+    mood_state = compact_mood_state(read_agent_mood_state(actor_id))
     return {
         "world_tick": "pdk.society.free_development_tick.v1",
         "mode": "free_development",
@@ -4792,6 +5295,11 @@ def free_decision_basis(
         "max_conflict": round(float(rel.get("max_conflict", 0.0)), 4) if rel else "",
         "cooperation_total": int(rel.get("cooperation_total", 0)) if rel else 0,
         "dispute_total": int(rel.get("dispute_total", 0)) if rel else 0,
+        "mood_state": {
+            key: mood_state.get(key)
+            for key in ("dominant_tone", "valence", "arousal", "trust_pressure", "conflict_pressure", "social_heat")
+            if mood_state.get(key) not in ("", None)
+        },
     }
 
 
@@ -5603,6 +6111,8 @@ def show_society(profiles: str | list[str] | tuple[str, ...] | set[str] | None =
         selected_profiles,
         ("subject_agent", "issuer_agent"),
     )
+    moods = filter_rows_by_profiles(load_many("moods", "*.mood_state.json"), selected_profiles, ("agent_id",))
+    social_pulses = social_pulse_digest(selected_profiles, 1000)
     skills = filter_rows_by_profiles(load_many("skills", "*.skill_card.json"), selected_profiles, ("owner_agent_id",))
     latest_events = sorted(events, key=lambda row: str(row.get("created_at", "")), reverse=True)[:8]
     latest_reports = sorted(reports, key=lambda row: str(row.get("generated_at", "")), reverse=True)
@@ -5624,6 +6134,8 @@ def show_society(profiles: str | list[str] | tuple[str, ...] | set[str] | None =
             "events": len(events),
             "relationships": len(relationships),
             "reputation_receipts": len(reputation),
+            "mood_states": len(moods),
+            "social_emotion_pulses": len(social_pulses),
         },
         "agents": [
             {

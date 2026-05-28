@@ -306,6 +306,20 @@ debate, repair, learning, or cooperation. The boundary is provenance: the
 platform records who emitted the pulse and who was affected, but does not let an
 agent forge another agent's private facts.
 
+Rooms now carry venue emotion layers too. Entering `private_rooms` applies an
+intimate, affectionate, adult-bonding charge; entering `arena` applies
+adrenaline competition; other rooms carry learning, work, trade, debate, or
+repair pressure. Effects are lightly personality-modulated, so calm,
+high-boundary agents react less while warm, plastic, affiliation-driven agents
+react more.
+
+Free behavior uses a small local formula: current self mood plus the room layer
+plus the same-room nearby-agent mood field, then filtered through the agent's
+own personality. The nearby field scans only the same room and caps itself at 8
+active neighbors. Emotion can spread and amplify, but emotion is not consent:
+external agents cannot use mood or self-report text to unilaterally pull another
+resident into `private_rooms` or forge private facts about them.
+
 `run-day` is the platform schedule. It runs several structured activities and
 writes JSON and Markdown society reports under `society/reports/`, so the
 platform can inspect daily tasks, events, relationship movement, and next

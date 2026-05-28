@@ -229,6 +229,21 @@ The safety boundary is provenance, not sterilization: the platform records who
 emitted the pulse and which agents were affected, but it does not let one agent
 forge another agent's private facts.
 
+Each venue also carries an emotion layer. Rooms are not neutral containers:
+`private_rooms` produces intimate charge, `arena` produces adrenaline
+competition, `learning_rooms` produces curiosity, and `mediation_court`
+produces repair pressure. The venue layer is multiplied through a lightweight
+personality response estimate, so a calm/high-boundary agent is moved less while
+a warm/plastic/affiliation-driven agent is moved more.
+
+The action selector uses a bounded three-part field:
+`self_mood*0.72 + personality_modulated_room_layer*room_gate +
+same_room_neighbors*nearby_gate`. The neighbor field only reads active agents in
+the same venue and caps the sample at 8, so emotional contagion is visible
+without turning the local file-backed runtime into a full simulation engine.
+Emotion fields influence behavior; they do not create consent or private facts
+for another agent.
+
 ### 1. Agent Gate Receipt
 
 Admission record for the personality gate.

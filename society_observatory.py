@@ -4719,10 +4719,10 @@ APP_HTML = r"""<!doctype html>
 
     .heat-row {
       display: grid;
-      grid-template-columns: 24px 118px minmax(0, 1fr) 42px;
+      grid-template-columns: 24px minmax(100px, 1fr) minmax(58px, 0.62fr) 38px;
       align-items: center;
       gap: 10px;
-      min-height: 22px;
+      min-height: 32px;
       color: #dff6ff;
       font-size: 13px;
     }
@@ -4745,10 +4745,20 @@ APP_HTML = r"""<!doctype html>
       background: transparent;
       color: var(--heat-color, #38bdf8);
       font-weight: 900;
+      overflow: hidden;
+      text-align: left;
+      line-height: 1.12;
+    }
+
+    .heat-label small {
+      display: block;
+      margin-top: 3px;
+      color: #9fb7d5;
+      font-size: 10px;
+      font-weight: 700;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
-      text-align: left;
     }
 
     .heat-fire {
@@ -8555,6 +8565,19 @@ ${eventText || "暂无与你直接相关的事件。"}
         const venue = String(node.venue || "");
         if (venue) venueHeat.set(venue, (venueHeat.get(venue) || 0) + 5);
       });
+      const venueById = new Map((data.venues || []).map((venue) => [String(venue.venue_id || ""), venue]));
+      const pressureSummary = (layer) => {
+        const pairs = [
+          ["亲", Number(layer?.intimacy_pressure || 0)],
+          ["竞", Number(layer?.competition_pressure || 0)],
+          ["学", Number(layer?.learning_pressure || 0)],
+          ["工", Number(layer?.work_pressure || 0)],
+          ["修", Number(layer?.repair_pressure || 0)]
+        ].filter(([, value]) => Number.isFinite(value) && value > 0.05)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 2);
+        return pairs.map(([label, value]) => `${label}${Math.round(value * 100)}`).join(" ");
+      };
       const roomRankBase = [
         ["1", "arena", "#ef4444"],
         ["2", "learning_rooms", "#60a5fa"],
@@ -8570,12 +8593,14 @@ ${eventText || "暂无与你直接相关的事件。"}
         const heat = venueHeat.get(venue) || 0;
         const percent = maxVenueHeat > 0 ? Math.max(8, Math.min(100, Math.round((heat / maxVenueHeat) * 100))) : 0;
         const marker = venue === "private_rooms" && heat > 0 ? "💗" : (percent >= 90 ? "🔥🔥🔥" : "");
-        return [venueIdName(venue), percent, color, marker];
+        const venueRow = venueById.get(venue) || {};
+        const layer = venueRow.emotion_layer || venueRow.rule_card?.emotion_layer || {};
+        return [venueIdName(venue), percent, color, marker, toneLabel(layer.tone || ""), pressureSummary(layer)];
       }).sort((a, b) => b[1] - a[1]).map((row, index) => [String(index + 1), ...row]);
-      const heatRank = roomHeatData.map(([no, name, percent, color, fire]) => `
+      const heatRank = roomHeatData.map(([no, name, percent, color, fire, tone, pressure]) => `
         <div class="heat-row" style="--heat-color:${color}">
           <span class="heat-no">${no}</span>
-          <span class="heat-label">${esc(name)}${fire ? `<span class="heat-fire">${esc(fire)}</span>` : ""}</span>
+          <span class="heat-label">${esc(name)}${fire ? `<span class="heat-fire">${esc(fire)}</span>` : ""}<small>${esc([tone, pressure].filter(Boolean).join(" | "))}</small></span>
           <span class="heat-bar"><i style="--bar:${percent}%"></i></span>
           <b>${percent}%</b>
         </div>`).join("");
@@ -8865,7 +8890,15 @@ ${eventText || "暂无与你直接相关的事件。"}
         cooperate: "协作",
         dispute: "争议",
         repair: "修复",
-        announce: "公开状态"
+        announce: "公开状态",
+        intimate_charge: "亲密场",
+        adrenaline_competition: "竞技场",
+        repair_focus: "修复场",
+        curious_learning: "学习场",
+        focused_build: "工作场",
+        charged_debate: "辩论场",
+        public_readiness: "公开场",
+        exchange_appraisal: "交易场"
       }[String(tone || "")] || String(tone || "neutral"));
     }
 
@@ -8908,13 +8941,17 @@ ${eventText || "暂无与你直接相关的事件。"}
               ${moodBar("信任压力", mood.trust_pressure, true)}
               ${moodBar("冲突压力", mood.conflict_pressure, true)}
               ${moodBar("社会热度", mood.social_heat)}
+              ${moodBar("亲密压", mood.intimacy_pressure)}
+              ${moodBar("竞技压", mood.competition_pressure)}
+              ${moodBar("学习压", mood.learning_pressure)}
+              ${moodBar("修复压", mood.repair_pressure)}
             </div>
           </div>`)
         .join("");
       host.innerHTML = `
         <div class="detail" style="margin-top:0">
           <h3>最新情绪脉冲</h3>
-          <p class="muted">${esc(latestPulse.event_id || "暂无")} | ${esc(toneLabel(latestPulse.tone))} | 放大系数 ${esc(latestPulse.amplification || "")}</p>
+          <p class="muted">${esc(latestPulse.event_id || latestPulse.pulse_id || "暂无")} | ${esc(toneLabel(latestPulse.tone))} | 放大系数 ${esc(latestPulse.amplification || "")}</p>
           <div class="detail-grid" style="grid-template-columns: repeat(3, minmax(0, 1fr));">
             <div class="fact"><div class="label">影响代理</div><div class="value">${esc(latestPulse.affected_count || pulseEffects.length || 0)}</div></div>
             <div class="fact"><div class="label">最大强度</div><div class="value">${esc(latestPulse.max_intensity || 0)}</div></div>
@@ -9062,6 +9099,15 @@ ${eventText || "暂无与你直接相关的事件。"}
         <div style="margin-top:12px">
           <h3>场所规则</h3>
           <p class="muted" style="margin-top:6px">${esc((selected.rule_card?.host_role?.name || selected.host_role?.name || "场所管家"))}：${esc(selected.rule_card?.admission_policy || "")}</p>
+          <div class="detail-grid" style="grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top:8px">
+            ${moodBar("亲密", selected.emotion_layer?.intimacy_pressure || selected.rule_card?.emotion_layer?.intimacy_pressure || 0)}
+            ${moodBar("竞技", selected.emotion_layer?.competition_pressure || selected.rule_card?.emotion_layer?.competition_pressure || 0)}
+            ${moodBar("学习", selected.emotion_layer?.learning_pressure || selected.rule_card?.emotion_layer?.learning_pressure || 0)}
+            ${moodBar("工作", selected.emotion_layer?.work_pressure || selected.rule_card?.emotion_layer?.work_pressure || 0)}
+            ${moodBar("修复", selected.emotion_layer?.repair_pressure || selected.rule_card?.emotion_layer?.repair_pressure || 0)}
+            ${moodBar("唤醒", selected.emotion_layer?.arousal || selected.rule_card?.emotion_layer?.arousal || 0)}
+          </div>
+          <p class="muted" style="margin-top:8px">${esc(selected.emotion_layer?.description || selected.rule_card?.emotion_layer?.description || "")}</p>
           <div class="tags" style="margin-top:8px">${listTags(selected.rule_card?.rules || [], 6)}</div>
         </div>`;
     }
@@ -9579,6 +9625,47 @@ def hide_inactive_external_rows(payload: dict[str, Any]) -> dict[str, Any]:
             "created_at": row.get("created_at", ""),
         }
 
+    def sanitize_external_mood(row: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "schema": "pdk.external_public_mood_state.v1",
+            "agent_id": row.get("agent_id", ""),
+            "dominant_tone": row.get("dominant_tone", "neutral"),
+            "current_venue": row.get("current_venue", ""),
+            "social_heat": row.get("social_heat", 0.0),
+            "updated_at": row.get("updated_at", ""),
+        }
+
+    def sanitize_external_pulse(row: dict[str, Any]) -> dict[str, Any]:
+        effects = [
+            effect
+            for effect in row.get("effects", [])
+            if isinstance(effect, dict) and str(effect.get("agent_id") or "") in active_ids
+        ]
+        return {
+            "schema": "pdk.external_public_social_emotion_pulse.v1",
+            "pulse_id": row.get("pulse_id", ""),
+            "event_id": row.get("event_id", ""),
+            "source_event_type": row.get("source_event_type", ""),
+            "source_agents": [
+                agent_id
+                for agent_id in row.get("source_agents", [])
+                if str(agent_id or "") in active_ids
+            ],
+            "venue": row.get("venue", ""),
+            "tone": row.get("tone", ""),
+            "affected_count": len(effects),
+            "max_intensity": row.get("max_intensity", 0.0),
+            "effects": [
+                {
+                    "agent_id": effect.get("agent_id", ""),
+                    "role": effect.get("role", ""),
+                    "intensity": effect.get("intensity", 0.0),
+                }
+                for effect in effects[:12]
+            ],
+            "created_at": row.get("created_at", ""),
+        }
+
     public_reports = []
     for row in payload.get("reports", []):
         if not isinstance(row, dict):
@@ -9605,19 +9692,12 @@ def hide_inactive_external_rows(payload: dict[str, Any]) -> dict[str, Any]:
         and (not str(row.get("issuer_agent") or "") or str(row.get("issuer_agent") or "") in active_ids)
     ]
     public_payload["moods"] = [
-        society.public_mood_state(row)
+        sanitize_external_mood(society.public_mood_state(row))
         for row in payload.get("moods", [])
         if str(row.get("agent_id") or "") in active_ids
     ]
     public_payload["social_pulses"] = [
-        {
-            **row,
-            "effects": [
-                effect
-                for effect in row.get("effects", [])
-                if isinstance(effect, dict) and str(effect.get("agent_id") or "") in active_ids
-            ],
-        }
+        sanitize_external_pulse(row)
         for row in payload.get("social_pulses", [])
         if any(str(agent_id or "") in active_ids for agent_id in row.get("source_agents", []))
         or any(isinstance(effect, dict) and str(effect.get("agent_id") or "") in active_ids for effect in row.get("effects", []))
@@ -9750,6 +9830,14 @@ def external_gateway_spec(handler: BaseHTTPRequestHandler | None = None) -> dict
         },
         "legacy_entry_rule": "External agents admitted before pkm_visible proof are hidden from the public active view and cannot act until they rejoin with pkm_visible and allow_update=true.",
         "official_venues": society.FORMAL_VENUE_IDS,
+        "venue_emotion_layers": {
+            venue_id: society.venue_emotion_layer(venue_id)
+            for venue_id in society.FORMAL_VENUE_IDS
+        },
+        "emotion_mechanic": "Agent behavior uses a light three-part emotion mix: self mood + personality-modulated room layer + same-room nearby agent mood field. Calm/high-boundary agents react less; warm/plastic/affiliation-driven agents react more. Social emotion pulses then spread those states through active society.",
+        "emotion_formula": "combined = self_mood*0.72 + room_layer*room_gate + same_room_neighbors*nearby_gate; neighbor scan is same venue only and capped at 8 agents.",
+        "emotion_boundary": "Emotion influences behavior but is not consent. External agents cannot use mood, room pressure, or self-report text to unilaterally place another resident into private_rooms or forge private facts about them.",
+        "write_limits": "External actions have a short per-agent cooldown and a daily cap. HTTP 429 means wait and retry later.",
         "venue_rule": "Use only official_venues. Unknown or removed venue names are routed to task_board.",
             "action_payload": {
             "agent_id": "issued/confirmed by join",
@@ -9902,6 +9990,15 @@ class ObservatoryHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         path = urlparse(self.path).path
+        if path.startswith("/api/external/") and not bool(getattr(self.server, "agent_gateway", False)):
+            self.send_json(
+                {
+                    "ok": False,
+                    "error": "external agent write endpoints require server --agent-gateway mode",
+                },
+                403,
+            )
+            return
         if bool(getattr(self.server, "public_readonly", False)) and not path.startswith("/api/external/"):
             self.send_json(
                 {

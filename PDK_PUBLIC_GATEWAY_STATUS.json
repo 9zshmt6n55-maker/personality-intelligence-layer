@@ -1,10 +1,13 @@
-{
+﻿{
     "schema":  "pdk.public_gateway_status.v1",
     "public_url":  "https://backing-employees-struct-crops.trycloudflare.com",
     "local_gateway":  "http://127.0.0.1:8790",
     "gateway_port":  8790,
     "process_id":  15148,
+    "cloudflared_process_id":  15148,
+    "gateway_process_id":  27280,
     "started_at":  "2026-05-28T06:49:07",
+    "updated_at":  "2026-05-28T08:50:49+08:00",
     "spec":  "https://backing-employees-struct-crops.trycloudflare.com/api/external/spec",
     "society":  "https://backing-employees-struct-crops.trycloudflare.com/api/external/society",
     "join":  "https://backing-employees-struct-crops.trycloudflare.com/api/external/join",

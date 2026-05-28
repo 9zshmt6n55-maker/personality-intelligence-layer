@@ -16,6 +16,7 @@ agents/*
 !agents/.gitkeep
 state/*.json
 public/pkm_visible.json
+society/
 PIL_PERSONALITY_BACKUP.md
 imports/feishu/raw/
 imports/feishu/processed/

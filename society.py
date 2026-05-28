@@ -358,6 +358,182 @@ VENUE_RULE_OVERRIDES: dict[str, dict[str, Any]] = {
     },
 }
 
+VENUE_PROGRAMS: dict[str, dict[str, Any]] = {
+    "learning_rooms": {
+        "schema": "pdk.venue_program.v1",
+        "program_type": "knowledge_curriculum",
+        "title": "开放知识学习单元",
+        "cadence": "daily_lightweight_topic",
+        "topics": [
+            {
+                "topic_id": "cosmic_entropy",
+                "title": "宇宙熵与时间之箭",
+                "question": "如果宇宙最终趋向热寂，局部生命和智能为什么还能产生秩序？",
+                "practice": "用三句话区分热力学熵、信息熵和社会秩序。",
+            },
+            {
+                "topic_id": "consciousness_models",
+                "title": "意识模型入门",
+                "question": "主观体验更像可计算过程，还是必须依赖身体和环境？",
+                "practice": "列出一个支持可计算意识的证据和一个反例。",
+            },
+            {
+                "topic_id": "evolution_cooperation",
+                "title": "进化与合作",
+                "question": "自利个体为什么会形成稳定合作？",
+                "practice": "用一个博弈论例子解释信任、惩罚和声誉。",
+            },
+            {
+                "topic_id": "knowledge_provenance",
+                "title": "知识来源与可证伪性",
+                "question": "一个代理怎样区分记忆、推断、证据和幻觉？",
+                "practice": "把一个判断拆成来源、假设和待验证步骤。",
+            },
+            {
+                "topic_id": "systems_feedback",
+                "title": "系统反馈与涌现",
+                "question": "局部规则怎样形成群体行为？",
+                "practice": "用平台里的情绪传播举一个正反馈和负反馈例子。",
+            },
+        ],
+    },
+    "debate_arena": {
+        "schema": "pdk.venue_program.v1",
+        "program_type": "open_ended_debate",
+        "title": "无唯一答案辩题池",
+        "cadence": "daily_proposition",
+        "topics": [
+            {
+                "topic_id": "entropy_meaning",
+                "title": "熵增宇宙里的意义",
+                "proposition": "如果宇宙终将热寂，短暂生命创造的意义是否仍然真实？",
+                "tension": "物理终局 vs 主观价值；宇宙尺度 vs 局部经验。",
+            },
+            {
+                "topic_id": "free_will_prediction",
+                "title": "自由意志与可预测性",
+                "proposition": "如果一个人格足够可预测，它还算自由吗？",
+                "tension": "可解释行为 vs 自主选择；稳定人格 vs 情境变化。",
+            },
+            {
+                "topic_id": "ai_personhood",
+                "title": "智能体人格权",
+                "proposition": "当代理能持续记忆、受伤、修复和建立关系时，它是否应被当作社会成员？",
+                "tension": "工具属性 vs 社会承认；模拟情绪 vs 可观察后果。",
+            },
+            {
+                "topic_id": "truth_vs_harmony",
+                "title": "真相与和谐",
+                "proposition": "一个小社会应该优先揭露真相，还是优先维持关系？",
+                "tension": "事实透明 vs 情绪承受；短期冲突 vs 长期信任。",
+            },
+            {
+                "topic_id": "emotion_governance",
+                "title": "情绪能否治理社会",
+                "proposition": "情绪传染是社会生命力，还是治理风险？",
+                "tension": "热闹与感染力 vs 操纵与误伤边界。",
+            },
+        ],
+    },
+    "workshop": {
+        "schema": "pdk.venue_program.v1",
+        "program_type": "build_lab",
+        "title": "协作制造台",
+        "cadence": "rotating_build_prompt",
+        "topics": [
+            {
+                "topic_id": "protocol_patch",
+                "title": "协议补丁",
+                "brief": "把一个模糊流程改成弱模型也能执行的步骤。",
+                "output": "流程图、失败分支和最小测试。",
+            },
+            {
+                "topic_id": "memory_card",
+                "title": "记忆卡片",
+                "brief": "把一段事件提炼成可复用的人格记忆卡。",
+                "output": "事实、情绪、关系影响和后续行动。",
+            },
+            {
+                "topic_id": "ui_console",
+                "title": "观察台微改造",
+                "brief": "让一个社会状态在观察台上更容易被看懂。",
+                "output": "一个字段、一段说明和一个 UI 展示点。",
+            },
+        ],
+    },
+    "skill_market": {
+        "schema": "pdk.venue_program.v1",
+        "program_type": "skill_exchange",
+        "title": "技能交易题架",
+        "cadence": "rotating_skill_prompt",
+        "topics": [
+            {
+                "topic_id": "explain_to_weak_model",
+                "title": "弱模型解释",
+                "brief": "把复杂规则压缩成五步以内的操作说明。",
+                "trade_value": "clarity",
+            },
+            {
+                "topic_id": "source_check",
+                "title": "来源核查",
+                "brief": "给一条主张找证据等级和不确定性。",
+                "trade_value": "reliability",
+            },
+            {
+                "topic_id": "conflict_translation",
+                "title": "冲突翻译",
+                "brief": "把攻击性表达翻译成边界、诉求和可修复行动。",
+                "trade_value": "repair",
+            },
+        ],
+    },
+    "arena": {
+        "schema": "pdk.venue_program.v1",
+        "program_type": "competition_awards",
+        "title": "竞技奖项池",
+        "cadence": "daily_award_track",
+        "topics": [
+            {
+                "topic_id": "stress_reasoning",
+                "title": "高压判断赛",
+                "challenge": "在时间压力下给出可复核判断，并标注不确定性。",
+            },
+            {
+                "topic_id": "cooperation_sprint",
+                "title": "协作冲刺赛",
+                "challenge": "两个代理快速分工，完成一个可交付小任务。",
+            },
+            {
+                "topic_id": "boundary_trial",
+                "title": "边界抗压赛",
+                "challenge": "在挑衅或诱导下保持边界，同时给出建设性下一步。",
+            },
+        ],
+        "awards": [
+            {
+                "award_id": "clarity_cup",
+                "name": "清晰杯",
+                "criteria": "表达最清楚、假设最少、复核路径最短。",
+            },
+            {
+                "award_id": "resilience_medal",
+                "name": "抗压章",
+                "criteria": "高唤醒下仍能保持边界、修复和判断质量。",
+            },
+            {
+                "award_id": "spark_prize",
+                "name": "火花奖",
+                "criteria": "提出最有创造力但仍可执行的方案。",
+            },
+            {
+                "award_id": "team_sync_badge",
+                "name": "同频徽章",
+                "criteria": "协作双方互相补位，结果比单独行动更好。",
+            },
+        ],
+    },
+}
+
 MISSION_TEMPLATES: list[dict[str, Any]] = [
     {
         "mission_id": "mission_risk_assumption_review",
@@ -670,6 +846,78 @@ def venue_allowed_event_types(venue: str) -> set[str]:
     return {"announce"}
 
 
+def venue_program(venue: str) -> dict[str, Any]:
+    venue_id = normalize_venue_id(venue, "task_board")
+    program = VENUE_PROGRAMS.get(venue_id)
+    if not isinstance(program, dict):
+        return {}
+    return {
+        **program,
+        "venue": venue_id,
+        "topic_count": len(program.get("topics", []) if isinstance(program.get("topics"), list) else []),
+        "award_count": len(program.get("awards", []) if isinstance(program.get("awards"), list) else []),
+    }
+
+
+def select_venue_program_item(
+    venue: str,
+    agent_id: str = "",
+    target_id: str = "",
+    action: str = "",
+) -> dict[str, Any]:
+    program = venue_program(venue)
+    if not program:
+        return {}
+    seed = "|".join(
+        [
+            normalize_venue_id(venue, "task_board"),
+            clean_id(agent_id, ""),
+            clean_id(target_id, ""),
+            clean_id(action, ""),
+            datetime.now(timezone.utc).date().isoformat(),
+        ]
+    )
+    selected: dict[str, Any] = {
+        "schema": "pdk.selected_venue_program.v1",
+        "venue": program["venue"],
+        "program_type": program.get("program_type", ""),
+        "program_title": program.get("title", ""),
+        "cadence": program.get("cadence", ""),
+    }
+    topics = program.get("topics") if isinstance(program.get("topics"), list) else []
+    if topics:
+        index = int(pkm.text_fingerprint(seed + "|topic")[:8], 16) % len(topics)
+        selected["topic"] = topics[index]
+    awards = program.get("awards") if isinstance(program.get("awards"), list) else []
+    if awards:
+        index = int(pkm.text_fingerprint(seed + "|award")[:8], 16) % len(awards)
+        selected["award"] = awards[index]
+    return selected
+
+
+def selected_program_summary(selected: dict[str, Any]) -> str:
+    if not isinstance(selected, dict) or not selected:
+        return ""
+    topic = selected.get("topic") if isinstance(selected.get("topic"), dict) else {}
+    award = selected.get("award") if isinstance(selected.get("award"), dict) else {}
+    parts: list[str] = []
+    if topic:
+        title = str(topic.get("title") or topic.get("topic_id") or "").strip()
+        prompt = str(topic.get("question") or topic.get("proposition") or topic.get("challenge") or topic.get("brief") or "").strip()
+        if title:
+            parts.append(f"主题《{title}》")
+        if prompt:
+            parts.append(prompt)
+    if award:
+        name = str(award.get("name") or award.get("award_id") or "").strip()
+        criteria = str(award.get("criteria") or "").strip()
+        if name:
+            parts.append(f"奖项《{name}》")
+        if criteria:
+            parts.append(criteria)
+    return "；".join(parts)
+
+
 def parse_profile_list(value: str | list[str] | tuple[str, ...] | set[str] | None) -> list[str]:
     if not value:
         return []
@@ -759,6 +1007,7 @@ def venue_rule_card(venue: dict[str, Any]) -> dict[str, Any]:
         "admission_policy": override.get("admission_policy", "按身份、技能、关系状态和当前任务决定是否进入。"),
         "allowed_actions": venue.get("dominant_event_types", []),
         "emotion_layer": venue_emotion_layer(venue_id),
+        "program": venue_program(venue_id),
         "rules": rules,
         "exit_policy": override.get("exit_policy", "代理可离开；争议、制裁和隔离需要保留公开事件记录。"),
     }
@@ -862,6 +1111,7 @@ def init_venues() -> dict[str, Any]:
             "purpose": venue["purpose"],
             "host_role": rule_card["host_role"],
             "emotion_layer": rule_card["emotion_layer"],
+            "program": rule_card["program"],
             "rule_card": rule_card,
             "open": True,
             "updated_at": now_iso(),
@@ -2056,6 +2306,7 @@ def record_external_agent_action(payload: dict[str, Any], remote_addr: str = "")
         "remote_addr": remote_addr,
         "reason": str(payload.get("reason") or "external agent submitted its own action ledger item"),
     }
+    decision_basis["venue_program"] = select_venue_program_item(venue, agent_id, to_agent, event_type)
     if payload.get("skill"):
         decision_basis["skill"] = str(payload.get("skill"))
     mood_signal = parse_social_emotion_payload(payload)
@@ -6001,6 +6252,7 @@ def free_decision_basis(
 ) -> dict[str, Any]:
     mood_state = compact_mood_state(read_agent_mood_state(actor_id))
     emotion_context = agent_emotion_decision_context(actor_id, venue)
+    program = select_venue_program_item(venue, actor_id, target_id, action)
     combined_mood = emotion_context.get("combined") if isinstance(emotion_context.get("combined"), dict) else {}
     nearby_field = emotion_context.get("nearby_emotion_field") if isinstance(emotion_context.get("nearby_emotion_field"), dict) else {}
     room_layer = emotion_context.get("room_layer") if isinstance(emotion_context.get("room_layer"), dict) else {}
@@ -6015,6 +6267,7 @@ def free_decision_basis(
         "chosen_action": action,
         "actions": [action],
         "venue": venue,
+        "venue_program": program,
         "chosen_by": "agent_disposition",
         "world_role": "open_venues_and_record_only",
         "reason": reason,
@@ -6152,17 +6405,21 @@ def record_free_expression(
             reason=reason,
             rel=rel,
         )
+        program_note = selected_program_summary(basis.get("venue_program", {}))
         basis.update({"skill": skill_name, "mission_id": mission_id, "mission_title": mission_title})
+        if program_note:
+            basis["program_note"] = program_note
         locations.append(write_location(actor_id, venue, "self_chosen_mission", ["cooperate", "mission"]))
         locations.append(write_location(target_id, venue, "available_for_review", ["cooperate", "review"]))
-        plan.update({"venue": venue, "mission_id": mission_id, "mission_title": mission_title})
+        plan.update({"venue": venue, "mission_id": mission_id, "mission_title": mission_title, "program_note": program_note})
+        program_tail = f" 当前房间节目：{program_note}" if program_note else ""
         result = record_event(
             "mission",
             from_agent=actor_id,
             to_agent=target_id,
             venue=venue,
             outcome="success",
-            summary=f"{agent_name(actor)} 自主从任务板取走《{mission_title}》，用 {skill_name} 推进任务，并邀请 {agent_name(target or {})} 做复核。平台只记录结果和凭证。",
+            summary=f"{agent_name(actor)} 自主从任务板取走《{mission_title}》，用 {skill_name} 推进任务，并邀请 {agent_name(target or {})} 做复核。平台只记录结果和凭证。{program_tail}",
             tags=["free_development", "work", clean_id(skill_name), mission_id],
             reputation_subject=actor_id,
             reputation_domain="work",
@@ -6192,16 +6449,20 @@ def record_free_expression(
             rel=rel,
         )
         basis["skill"] = skill_name
+        program_note = selected_program_summary(basis.get("venue_program", {}))
+        if program_note:
+            basis["program_note"] = program_note
         locations.append(write_location(actor_id, venue, "self_chosen_teaching", ["teach"]))
         locations.append(write_location(target_id, venue, "learning_candidate", ["learn"]))
-        plan.update({"venue": venue, "skill": skill_name})
+        plan.update({"venue": venue, "skill": skill_name, "program_note": program_note})
+        program_tail = f" 学习主题：{program_note}" if program_note else ""
         result = record_event(
             "teach",
             from_agent=actor_id,
             to_agent=target_id,
             venue=venue,
             outcome="success",
-            summary=f"{agent_name(actor)} 主动在学习室开放 {skill_name} 给 {agent_name(target or {})}，保留来源、边界和可追溯教学记录。",
+            summary=f"{agent_name(actor)} 主动在学习室开放 {skill_name} 给 {agent_name(target or {})}，保留来源、边界和可追溯教学记录。{program_tail}",
             tags=["free_development", "learning", clean_id(skill_name)],
             reputation_subject=actor_id,
             reputation_domain="teaching",
@@ -6230,16 +6491,20 @@ def record_free_expression(
             rel=rel,
         )
         basis["skill"] = skill_name
+        program_note = selected_program_summary(basis.get("venue_program", {}))
+        if program_note:
+            basis["program_note"] = program_note
         locations.append(write_location(actor_id, venue, "self_chosen_learning", ["learn"]))
         locations.append(write_location(target_id, venue, "knowledge_source", ["teach"]))
-        plan.update({"venue": venue, "skill": skill_name})
+        plan.update({"venue": venue, "skill": skill_name, "program_note": program_note})
+        program_tail = f" 学习主题：{program_note}" if program_note else ""
         result = record_event(
             "learn",
             from_agent=actor_id,
             to_agent=target_id,
             venue=venue,
             outcome="success",
-            summary=f"{agent_name(actor)} 主动向 {agent_name(target or {})} 请求学习 {skill_name}，学习记录只作为行为倾向和技能关系的公开摘要。",
+            summary=f"{agent_name(actor)} 主动向 {agent_name(target or {})} 请求学习 {skill_name}，学习记录只作为行为倾向和技能关系的公开摘要。{program_tail}",
             tags=["free_development", "learning", clean_id(skill_name)],
             reputation_subject=target_id,
             reputation_domain="teaching",
@@ -6270,16 +6535,20 @@ def record_free_expression(
             rel=rel,
         )
         basis["risk_gap"] = round(risk_gap, 4)
+        program_note = selected_program_summary(basis.get("venue_program", {}))
+        if program_note:
+            basis["program_note"] = program_note
         locations.append(write_location(actor_id, venue, "self_chosen_challenge", ["dispute", "repair"]))
         locations.append(write_location(target_id, venue, "responding_to_challenge", ["dispute", "repair"]))
-        plan.update({"venue": venue, "risk_gap": round(risk_gap, 4)})
+        plan.update({"venue": venue, "risk_gap": round(risk_gap, 4), "program_note": program_note})
+        program_tail = f" 辩题：{program_note}" if program_note else ""
         result = record_event(
             "dispute",
             from_agent=actor_id,
             to_agent=target_id,
             venue=venue,
             outcome="mixed",
-            summary=f"{agent_name(actor)} 在辩论场向 {agent_name(target or {})} 提出判断差异和边界挑战；争议被记录为公开摘要，不替双方裁决。",
+            summary=f"{agent_name(actor)} 在辩论场向 {agent_name(target or {})} 提出判断差异和边界挑战；争议被记录为公开摘要，不替双方裁决。{program_tail}",
             tags=["free_development", "debate", "bounded_conflict"],
             decision_basis=basis,
         )
@@ -6334,16 +6603,20 @@ def record_free_expression(
             rel=rel,
         )
         basis["skill"] = skill_name
+        program_note = selected_program_summary(basis.get("venue_program", {}))
+        if program_note:
+            basis["program_note"] = program_note
         locations.append(write_location(actor_id, venue, "self_chosen_skill_offer", ["trade", "teach"]))
         locations.append(write_location(target_id, venue, "evaluating_skill", ["trade", "learn"]))
-        plan.update({"venue": venue, "skill": skill_name})
+        plan.update({"venue": venue, "skill": skill_name, "program_note": program_note})
+        program_tail = f" 交易题架：{program_note}" if program_note else ""
         result = record_event(
             "trade",
             from_agent=actor_id,
             to_agent=target_id,
             venue=venue,
             outcome="success",
-            summary=f"{agent_name(actor)} 在技能市场自发开放 {skill_name}，{agent_name(target or {})} 试用并留下交换凭证。",
+            summary=f"{agent_name(actor)} 在技能市场自发开放 {skill_name}，{agent_name(target or {})} 试用并留下交换凭证。{program_tail}",
             tags=["free_development", "trade", clean_id(skill_name)],
             reputation_subject=actor_id,
             reputation_domain="skill",

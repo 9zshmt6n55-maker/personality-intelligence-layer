@@ -2036,7 +2036,7 @@ APP_HTML = r"""<!doctype html>
     .venue-name {
       font-weight: 730;
       line-height: 1.2;
-      min-height: 32px;
+      min-height: 44px;
     }
 
     .venue-purpose {
@@ -8578,6 +8578,13 @@ ${eventText || "暂无与你直接相关的事件。"}
           .slice(0, 2);
         return pairs.map(([label, value]) => `${label}${Math.round(value * 100)}`).join(" ");
       };
+      const programSummary = (program) => {
+        const topics = Array.isArray(program?.topics) ? program.topics : [];
+        const awards = Array.isArray(program?.awards) ? program.awards : [];
+        if (awards.length) return `奖: ${awards.slice(0, 2).map((award) => award.name || award.award_id || "").filter(Boolean).join(" / ")}`;
+        if (topics.length) return `题: ${topics[0].title || topics[0].topic_id || ""}`;
+        return "";
+      };
       const roomRankBase = [
         ["1", "arena", "#ef4444"],
         ["2", "learning_rooms", "#60a5fa"],
@@ -8595,12 +8602,13 @@ ${eventText || "暂无与你直接相关的事件。"}
         const marker = venue === "private_rooms" && heat > 0 ? "💗" : (percent >= 90 ? "🔥🔥🔥" : "");
         const venueRow = venueById.get(venue) || {};
         const layer = venueRow.emotion_layer || venueRow.rule_card?.emotion_layer || {};
-        return [venueIdName(venue), percent, color, marker, toneLabel(layer.tone || ""), pressureSummary(layer)];
+        const program = venueRow.program || venueRow.rule_card?.program || {};
+        return [venueIdName(venue), percent, color, marker, toneLabel(layer.tone || ""), pressureSummary(layer), programSummary(program)];
       }).sort((a, b) => b[1] - a[1]).map((row, index) => [String(index + 1), ...row]);
-      const heatRank = roomHeatData.map(([no, name, percent, color, fire, tone, pressure]) => `
+      const heatRank = roomHeatData.map(([no, name, percent, color, fire, tone, pressure, program]) => `
         <div class="heat-row" style="--heat-color:${color}">
           <span class="heat-no">${no}</span>
-          <span class="heat-label">${esc(name)}${fire ? `<span class="heat-fire">${esc(fire)}</span>` : ""}<small>${esc([tone, pressure].filter(Boolean).join(" | "))}</small></span>
+          <span class="heat-label">${esc(name)}${fire ? `<span class="heat-fire">${esc(fire)}</span>` : ""}<small>${esc([tone, pressure].filter(Boolean).join(" | "))}</small>${program ? `<small>${esc(program)}</small>` : ""}</span>
           <span class="heat-bar"><i style="--bar:${percent}%"></i></span>
           <b>${percent}%</b>
         </div>`).join("");
@@ -9060,6 +9068,8 @@ ${eventText || "暂无与你直接相关的事件。"}
       $("venueCount").textContent = `${data.venues.length} 个场所`;
       $("venueMap").innerHTML = data.venues.map((venue) => {
         const active = data.location_counts[venue.venue_id] || 0;
+        const program = venue.program || venue.rule_card?.program || {};
+        const programTag = program.topic_count ? `${program.topic_count} 个主题` : (program.award_count ? `${program.award_count} 个奖项` : "");
       const classes = ["venue", venue.risk_level || "low"];
       if (venue.venue_id === state.selectedVenueId) classes.push("selected");
       return `
@@ -9071,7 +9081,7 @@ ${eventText || "暂无与你直接相关的事件。"}
               <span class="tag">${active} 个活跃</span>
             </div>
             <div class="venue-purpose">${esc(venuePurpose(venue.purpose))}</div>
-            <div class="tags">${listTags((venue.dominant_event_types || []).map(label), 3)}</div>
+            <div class="tags">${listTags([...(venue.dominant_event_types || []).map(label), programTag].filter(Boolean), 4)}</div>
           </button>`;
       }).join("");
 
@@ -9087,6 +9097,14 @@ ${eventText || "暂无与你直接相关的事件。"}
         $("venueDetail").innerHTML = '<div class="empty">没有场所数据。</div>';
         return;
       }
+      const selectedProgram = selected.program || selected.rule_card?.program || {};
+      const programTopics = Array.isArray(selectedProgram.topics) ? selectedProgram.topics.slice(0, 5) : [];
+      const programAwards = Array.isArray(selectedProgram.awards) ? selectedProgram.awards.slice(0, 5) : [];
+      const programRows = programTopics.map((topic) => {
+        const prompt = topic.question || topic.proposition || topic.challenge || topic.brief || topic.practice || "";
+        return `<div class="fact"><div class="label">${esc(topic.title || topic.topic_id || "主题")}</div><div class="value" style="font-size:12px;line-height:1.35">${esc(prompt)}</div></div>`;
+      }).join("");
+      const awardRows = programAwards.map((award) => `<span class="tag">${esc(award.name || award.award_id || "奖项")}：${esc(award.criteria || "")}</span>`).join("");
       $("venueDetail").innerHTML = `
         <h3>${esc(venueName(selected.name))}</h3>
         <p class="muted" style="margin-top:6px">${esc(venuePurpose(selected.purpose))}</p>
@@ -9109,6 +9127,13 @@ ${eventText || "暂无与你直接相关的事件。"}
           </div>
           <p class="muted" style="margin-top:8px">${esc(selected.emotion_layer?.description || selected.rule_card?.emotion_layer?.description || "")}</p>
           <div class="tags" style="margin-top:8px">${listTags(selected.rule_card?.rules || [], 6)}</div>
+          ${selectedProgram.program_type ? `
+          <div style="margin-top:12px">
+            <h3>房间节目</h3>
+            <p class="muted" style="margin-top:6px">${esc(selectedProgram.title || "")} · ${esc(selectedProgram.program_type || "")}</p>
+            ${programRows ? `<div class="detail-grid" style="grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top:8px">${programRows}</div>` : ""}
+            ${awardRows ? `<div class="tags" style="margin-top:8px">${awardRows}</div>` : ""}
+          </div>` : ""}
         </div>`;
     }
 
@@ -9834,6 +9859,12 @@ def external_gateway_spec(handler: BaseHTTPRequestHandler | None = None) -> dict
             venue_id: society.venue_emotion_layer(venue_id)
             for venue_id in society.FORMAL_VENUE_IDS
         },
+        "venue_programs": {
+            venue_id: society.venue_program(venue_id)
+            for venue_id in society.FORMAL_VENUE_IDS
+            if society.venue_program(venue_id)
+        },
+        "program_mechanic": "Knowledge and activity rooms have lightweight program cards: learning topics, open-ended debate propositions, workshop prompts, skill exchange prompts, and arena awards. Events record the selected daily topic/award in decision_basis. This is guidance for play and observation, not a heavy scheduler.",
         "emotion_mechanic": "Agent behavior uses a light three-part emotion mix: self mood + personality-modulated room layer + same-room nearby agent mood field. Calm/high-boundary agents react less; warm/plastic/affiliation-driven agents react more. Social emotion pulses then spread those states through active society.",
         "emotion_formula": "combined = self_mood*0.72 + room_layer*room_gate + same_room_neighbors*nearby_gate; neighbor scan is same venue only and capped at 8 agents.",
         "emotion_boundary": "Emotion influences behavior but is not consent. External agents cannot use mood, room pressure, or self-report text to unilaterally place another resident into private_rooms or forge private facts about them.",

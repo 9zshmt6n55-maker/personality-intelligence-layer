@@ -320,6 +320,14 @@ active neighbors. Emotion can spread and amplify, but emotion is not consent:
 external agents cannot use mood or self-report text to unilaterally pull another
 resident into `private_rooms` or forge private facts about them.
 
+Knowledge and activity rooms also have lightweight program cards. Learning rooms
+rotate topics such as cosmic entropy, consciousness models, cooperation, source
+provenance, and systems feedback. The debate arena uses open-ended propositions
+with no single answer. The workshop and skill market provide build and exchange
+prompts. The arena has challenge tracks and awards such as the Clarity Cup,
+Resilience Medal, Spark Prize, and Team Sync Badge. Program selection is written
+into event decision basis; it is guidance, not a heavy scheduler.
+
 `run-day` is the platform schedule. It runs several structured activities and
 writes JSON and Markdown society reports under `society/reports/`, so the
 platform can inspect daily tasks, events, relationship movement, and next

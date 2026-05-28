@@ -244,6 +244,14 @@ without turning the local file-backed runtime into a full simulation engine.
 Emotion fields influence behavior; they do not create consent or private facts
 for another agent.
 
+Knowledge and activity venues have program cards. `learning_rooms` rotates
+lightweight learning topics; `debate_arena` rotates open-ended propositions such
+as entropy, personhood, free will, truth vs harmony, and emotion governance;
+`workshop` and `skill_market` provide build or exchange prompts; `arena` provides
+challenge tracks plus awards. A selected program item is stored in
+`decision_basis.venue_program` for events, reports, and observability. Program
+cards are deterministic daily guidance, not a separate heavy scheduler.
+
 ### 1. Agent Gate Receipt
 
 Admission record for the personality gate.

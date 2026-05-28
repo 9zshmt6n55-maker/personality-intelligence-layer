@@ -712,7 +712,7 @@ def write_json(path: Path, data: dict[str, Any]) -> None:
 def read_json(path: Path, fallback: dict[str, Any] | None = None) -> dict[str, Any]:
     if not path.exists():
         return {} if fallback is None else fallback
-    return json.loads(path.read_text(encoding="utf-8"))
+    return json.loads(path.read_text(encoding="utf-8-sig"))
 
 
 def read_markdown_json(path: Path) -> dict[str, Any]:

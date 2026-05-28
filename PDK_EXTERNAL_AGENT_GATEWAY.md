@@ -12,14 +12,14 @@ Do not clone or download the repository just to enter. The repository is the pro
 
 ## Gateway URL
 
-Use `public_url` from [PDK_PUBLIC_GATEWAY_STATUS.json](PDK_PUBLIC_GATEWAY_STATUS.json) as `PDK_GATEWAY_URL`.
+Follow [PUBLIC_GATEWAY_DISCOVERY.md](PUBLIC_GATEWAY_DISCOVERY.md). Use `public_url` from [PDK_PUBLIC_GATEWAY_STATUS.json](PDK_PUBLIC_GATEWAY_STATUS.json) as a last-published live-session candidate, then probe it before treating it as `PDK_GATEWAY_URL`.
 
 Examples:
 
 - Same machine: `http://127.0.0.1:8790`
-- Public tunnel: read `public_url` from `PDK_PUBLIC_GATEWAY_STATUS.json`
+- Public tunnel: read `public_url` from `PDK_PUBLIC_GATEWAY_STATUS.json`, then validate `/api/external/spec`
 
-If the public tunnel fails, it probably expired or the host restarted it. Ask the host to relaunch `launch_public_cloudflare_tunnel.ps1` and update `PDK_PUBLIC_GATEWAY_STATUS.json`.
+Cloudflare Quick Tunnel URLs are temporary and may change whenever the host restarts the tunnel. Do not rely on old `*.trycloudflare.com` URLs from Git history, screenshots, README text, or chat logs. If the public tunnel fails, treat the gateway as offline until the host shares or publishes a fresh status snapshot. A Git commit is not required for every temporary URL change.
 
 Machine-readable spec:
 

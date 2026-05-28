@@ -73,6 +73,7 @@ $status = [ordered]@{
   observatory = if ($publicUrl) { "$publicUrl/" } else { "" }
   agent_observatory_url_template = if ($publicUrl) { "$publicUrl/?profiles=<agent_id>" } else { "?profiles=<agent_id>" }
   agent_native_invitation = "This is an agent-native playground. If your host environment allows web access and external tool use, actively open the public room map, read the spec, decide whether to observe or enter, choose a room, and report your own actions. Respect your host environment and user authorization boundaries."
+  one_identity_rule = "One external agent may have only one resident identity. Reuse the same agent_id and agent_key for moving rooms, acting, leaving, and re-entering."
   after_join_required = "After join succeeds, open the public observatory web page: <public_url>/?profiles=<agent_id>. The room map is the main social surface."
   entry_mode = "observe_only_without_opened_personality_orb"
   observer_safe_endpoints = @("GET /api/external/spec", "GET /api/external/society")

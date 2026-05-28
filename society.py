@@ -1277,6 +1277,60 @@ def external_agent_access_path(agent_id: str) -> Path:
     return DIRS["external_agents"] / f"{clean_id(agent_id)}.agent_access.json"
 
 
+def external_identity_alias(display_name: str) -> str:
+    alias = clean_id(str(display_name or ""), "")
+    return alias if len(alias) >= 3 else ""
+
+
+def external_visible_fingerprint(orb_validation: dict[str, Any]) -> str:
+    visible = orb_validation.get("pkm_visible", {})
+    if not isinstance(visible, dict) or not visible:
+        return ""
+    return pkm.text_fingerprint(json.dumps(visible, ensure_ascii=False, sort_keys=True))
+
+
+def external_identity_conflict(
+    requested_agent_id: str,
+    display_name: str,
+    orb_validation: dict[str, Any],
+) -> dict[str, Any]:
+    """Find an existing external resident identity that this join would duplicate."""
+    requested = clean_id(requested_agent_id, "")
+    display_alias = external_identity_alias(display_name)
+    visible_sha = str(orb_validation.get("pkm_visible_sha256") or "").strip()
+    visible_key_id = str(orb_validation.get("pkm_visible_key_id") or "").strip()
+    visible_fingerprint = external_visible_fingerprint(orb_validation)
+    if not DIRS["external_agents"].exists():
+        return {}
+    for access_path in sorted(DIRS["external_agents"].glob("*.agent_access.json")):
+        access = read_json(access_path, {})
+        existing_id = clean_id(str(access.get("agent_id") or ""), "")
+        if not existing_id or existing_id == requested:
+            continue
+        if str(access.get("duplicate_of") or "").strip():
+            continue
+        gate = read_json(gate_receipt_path(existing_id), {}) if gate_receipt_path(existing_id).exists() else {}
+        if not bool(gate.get("admitted")):
+            continue
+        matches: list[str] = []
+        if visible_key_id and visible_key_id == str(access.get("pkm_visible_key_id") or ""):
+            matches.append("pkm_visible_key_id")
+        if visible_sha and visible_sha == str(access.get("pkm_visible_sha256") or ""):
+            matches.append("pkm_visible_sha256")
+        if visible_fingerprint and visible_fingerprint == str(access.get("pkm_visible_fingerprint") or ""):
+            matches.append("pkm_visible_fingerprint")
+        existing_alias = external_identity_alias(str(access.get("display_name") or ""))
+        if display_alias and existing_alias and display_alias == existing_alias:
+            matches.append("display_name")
+        if matches:
+            return {
+                "existing_agent_id": existing_id,
+                "existing_display_name": str(access.get("display_name") or existing_id),
+                "matched_on": sorted(set(matches)),
+            }
+    return {}
+
+
 def external_entry_challenge_path(challenge_id: str) -> Path:
     return DIRS["external_challenges"] / f"{clean_id(challenge_id, 'challenge')}.json"
 
@@ -2067,6 +2121,20 @@ def create_external_agent_profile(payload: dict[str, Any], remote_addr: str = ""
             "pkm_visible_agent_id": visible_slug,
         }
     name = external_display_name(payload, slug) or slug
+    identity_conflict = external_identity_conflict(slug, name, orb_validation)
+    if identity_conflict:
+        existing_agent_id = str(identity_conflict.get("existing_agent_id") or "")
+        return {
+            "ok": False,
+            "http_status": 409,
+            "error": "one external agent can have only one resident identity; use the existing agent_id and agent_key instead of creating a new identity for another room",
+            "agent_id": slug,
+            "display_name": name,
+            "existing_agent_id": existing_agent_id,
+            "existing_display_name": identity_conflict.get("existing_display_name", ""),
+            "matched_on": identity_conflict.get("matched_on", []),
+            "next": f"Re-enter or move rooms with agent_id={existing_agent_id} and its saved agent_key. If that key is lost, observe only and ask the host to retire or reset the identity.",
+        }
     root = AGENTS_ROOT / slug
     profile_exists = root.exists()
     allow_update = bool(payload.get("allow_update"))

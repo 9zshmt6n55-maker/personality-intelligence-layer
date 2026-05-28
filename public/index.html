@@ -1,9 +1,26 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>PKM Personality Body</title>
+    <script>
+      (() => {
+        const params = new URLSearchParams(window.location.search);
+        const normalize = (value) => {
+          const text = String(value || "").trim().toLowerCase().replaceAll("_", "-");
+          if (["zh", "chinese", "china", "cp936", "gbk", "gb2312", "936"].some((marker) => text.includes(marker))) return "zh";
+          if (text.startsWith("en") || text.includes("english")) return "en";
+          return "";
+        };
+        const candidates = [params.get("lang"), ...Array.from(navigator.languages || []), navigator.language];
+        const lang = candidates.map(normalize).find(Boolean) || "en";
+        const locale = lang === "zh" ? "zh-CN" : "en-US";
+        document.documentElement.lang = locale;
+        document.title = lang === "zh" ? "PKM 人格体" : "PKM Personality Body";
+        window.PDK_PUBLIC_UI = { lang, locale };
+      })();
+    </script>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
@@ -46,7 +63,7 @@
         <header class="observatory-header">
           <div>
             <span class="system-mark">Personality Morphology</span>
-            <h2>人格体</h2>
+            <h2>Personality Body</h2>
           </div>
           <div class="header-tools">
             <div class="orbit-note">drag rotate / wheel zoom</div>

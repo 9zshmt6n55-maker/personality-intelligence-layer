@@ -1,3 +1,92 @@
+const PDK_UI_LANG = window.PDK_PUBLIC_UI?.lang || "en";
+const PDK_UI_LOCALE = window.PDK_PUBLIC_UI?.locale || (PDK_UI_LANG === "zh" ? "zh-CN" : "en-US");
+const ZH_TEXT = {
+  "PKM / VISIBLE BODY": "PKM / 可见人格体",
+  "forming kernel": "成格中",
+  "Stage": "阶段",
+  "Interactions": "互动次数",
+  "Prototypes": "原型数",
+  "Model Thesis": "模型命题",
+  "Experience deforms the agent. Raw context is compressed.": "经验会改变代理。原始上下文会被压缩。",
+  "Body Layers": "身体层",
+  "core values": "核心价值",
+  "affective layer": "情绪层",
+  "behavior field": "行为场",
+  "boundary shell": "边界壳",
+  "Personality Morphology": "人格形态",
+  "Personality Body": "人格体",
+  "drag rotate / wheel zoom": "拖动旋转 / 滚轮缩放",
+  "label display": "标签显示",
+  "Hover": "悬停",
+  "All": "全部",
+  "Off": "关闭",
+  "Growth path off": "成长路径关",
+  "Growth path on": "成长路径开",
+  "Latest deformation": "最新形变",
+  "waiting for growth signal": "等待成长信号",
+  "Current Surface": "当前表面",
+  "Growth Cause": "成长原因",
+  "No growth trace yet.": "暂无成长痕迹。",
+  "Dominant territories": "主导领地",
+  "Confidence spectrum": "自信谱系",
+  "Latest force changed the visible body; raw text is compressed into tags and deltas.": "最新合力改变了可见人格体；原始文本会被压缩成标签和增量。",
+  "No visible delta.": "暂无可见增量。",
+  "Dominant": "主导",
+  "unknown": "未知",
+  "expanded": "扩张",
+  "contracted": "收缩"
+};
+const ZH_DYNAMIC = {
+  embryo: "胚胎期",
+  forming_kernel: "成格中",
+  shaping: "成形中",
+  formed: "成熟",
+  mature: "成熟",
+  "forming kernel": "成格中",
+  "confidence form": "自信形态"
+};
+
+function t(text) {
+  const raw = String(text ?? "");
+  return PDK_UI_LANG === "zh" ? (ZH_TEXT[raw] || raw) : raw;
+}
+
+function tx(enText, zhText) {
+  return PDK_UI_LANG === "zh" ? zhText : enText;
+}
+
+function labelText(value) {
+  const raw = String(value ?? "");
+  return PDK_UI_LANG === "zh" ? (ZH_DYNAMIC[raw] || ZH_TEXT[raw] || raw) : raw;
+}
+
+function applyStaticText(root = document.body) {
+  document.documentElement.lang = PDK_UI_LOCALE;
+  document.title = tx("PKM Personality Body", "PKM 人格体");
+  if (PDK_UI_LANG !== "zh") return;
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      const parent = node.parentElement;
+      if (!parent || ["SCRIPT", "STYLE", "TEXTAREA"].includes(parent.tagName)) return NodeFilter.FILTER_REJECT;
+      return ZH_TEXT[node.nodeValue.trim()] ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP;
+    }
+  });
+  const nodes = [];
+  while (walker.nextNode()) nodes.push(walker.currentNode);
+  nodes.forEach((node) => {
+    const raw = node.nodeValue;
+    const leading = raw.match(/^\s*/)?.[0] || "";
+    const trailing = raw.match(/\s*$/)?.[0] || "";
+    node.nodeValue = `${leading}${ZH_TEXT[raw.trim()]}${trailing}`;
+  });
+  document.querySelectorAll("[aria-label]").forEach((node) => {
+    const value = node.getAttribute("aria-label") || "";
+    node.setAttribute("aria-label", ZH_TEXT[value] || value);
+  });
+}
+
+applyStaticText();
+
 const mount = document.getElementById("canvasMount");
 const labelLayer = document.getElementById("labelLayer");
 const canvas = document.createElement("canvas");
@@ -529,7 +618,7 @@ function tooltipHtml(target) {
       .map((facet) => `<span>${facet.label} ${Math.round(facet.weight * 100)}%</span>`)
       .join("")
     : "";
-  const subtitle = isRegion ? item.action_label : "confidence form";
+  const subtitle = isRegion ? item.action_label : labelText("confidence form");
   const metrics = isRegion
     ? `
       <div><span>area</span><strong>${Math.round(item.area * 100)}%</strong></div>
@@ -592,10 +681,10 @@ function draw(phase, quality) {
 
 function formatHeadline(latest) {
   if (!latest || !latest.visible_delta || latest.visible_delta.length === 0) {
-    return "waiting for growth signal";
+    return t("waiting for growth signal");
   }
   const top = latest.visible_delta[0];
-  const directionText = top.delta >= 0 ? "expanded" : "contracted";
+  const directionText = top.delta >= 0 ? t("expanded") : t("contracted");
   return `${top.label} ${directionText} ${Math.abs(top.delta).toFixed(3)}`;
 }
 
@@ -604,7 +693,7 @@ function renderRegionRows(nextData) {
   anchorList.innerHTML = "";
   const regionTitle = document.createElement("div");
   regionTitle.className = "micro-title";
-  regionTitle.textContent = "Dominant territories";
+  regionTitle.textContent = t("Dominant territories");
   anchorList.appendChild(regionTitle);
 
   for (const region of (nextData.model.regions || []).slice(0, 8)) {
@@ -620,7 +709,7 @@ function renderRegionRows(nextData) {
 
   const confidenceTitle = document.createElement("div");
   confidenceTitle.className = "micro-title confidence-title";
-  confidenceTitle.textContent = "Confidence spectrum";
+  confidenceTitle.textContent = t("Confidence spectrum");
   anchorList.appendChild(confidenceTitle);
 
   for (const mode of (nextData.model.confidence_modes || []).slice(0, 5)) {
@@ -637,8 +726,8 @@ function renderRegionRows(nextData) {
 
 function renderInfo(nextData) {
   document.getElementById("agentName").textContent = nextData.agent.name;
-  document.getElementById("agentType").textContent = nextData.agent.type_label;
-  document.getElementById("stage").textContent = nextData.agent.stage;
+  document.getElementById("agentType").textContent = labelText(nextData.agent.type_label);
+  document.getElementById("stage").textContent = labelText(nextData.agent.stage);
   document.getElementById("count").textContent = nextData.agent.interaction_count;
   document.getElementById("protoCount").textContent = nextData.prototype_count;
   renderRegionRows(nextData);
@@ -657,7 +746,7 @@ function renderInfo(nextData) {
 
   const growth = document.getElementById("growth");
   if (!latest) {
-    growth.innerHTML = '<p class="muted">No growth trace yet.</p>';
+    growth.innerHTML = `<p class="muted">${t("No growth trace yet.")}</p>`;
     return;
   }
   const dominant = nextData.model.dominant_region;
@@ -668,11 +757,12 @@ function renderInfo(nextData) {
     .map((item) => `<div class="delta"><span>${item.label}</span><strong>${item.delta > 0 ? "+" : ""}${item.delta.toFixed(3)}</strong></div>`)
     .join("");
   growth.innerHTML = `
-    <p class="muted">Latest force changed the visible body; raw text is compressed into tags and deltas.</p>
+    <p class="muted">${t("Latest force changed the visible body; raw text is compressed into tags and deltas.")}</p>
     <div class="tags">${tags}</div>
-    <div class="delta-list">${deltas || '<p class="muted">No visible delta.</p>'}</div>
-    <p class="muted compact-note">Dominant: ${dominant ? dominant.label : "unknown"} / ${confidence ? confidence.label : "unknown"}</p>
+    <div class="delta-list">${deltas || `<p class="muted">${t("No visible delta.")}</p>`}</div>
+    <p class="muted compact-note">${t("Dominant")}: ${dominant ? dominant.label : t("unknown")} / ${confidence ? confidence.label : t("unknown")}</p>
   `;
+  applyStaticText(growth);
 }
 
 async function loadData() {
@@ -706,7 +796,7 @@ function setGrowthPath(nextValue) {
   const button = document.querySelector("[data-path-toggle]");
   if (!button) return;
   button.classList.toggle("active", showGrowthPath);
-  button.textContent = showGrowthPath ? "Growth path on" : "Growth path off";
+  button.textContent = showGrowthPath ? t("Growth path on") : t("Growth path off");
 }
 
 document.querySelectorAll("[data-label-mode]").forEach((button) => {
@@ -770,6 +860,7 @@ resize();
 setLabelMode("hover");
 setGrowthPath(false);
 loadData().catch((error) => {
-  document.getElementById("growth").innerHTML = `<p class="muted">Failed to load PKM visible data: ${error.message}</p>`;
+  const message = tx("Failed to load PKM visible data", "加载 PKM 可见数据失败");
+  document.getElementById("growth").innerHTML = `<p class="muted">${message}: ${error.message}</p>`;
 });
 requestAnimationFrame(animate);

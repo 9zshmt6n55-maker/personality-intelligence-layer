@@ -6,6 +6,7 @@ import colorsys
 import json
 import locale
 import math
+import os
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -130,6 +131,7 @@ UI_TEXT = {
         "entropy": "熵",
         "strength": "强度",
         "growth": "成长痕迹",
+        "decision": "当前决策",
         "no_growth": "暂无成长痕迹。新代理仍是低分化圆形人格体。",
         "changed": "变化",
         "settings": "设置",
@@ -165,6 +167,7 @@ UI_TEXT = {
         "entropy": "Entropy",
         "strength": "Strength",
         "growth": "Growth Trace",
+        "decision": "Decision",
         "no_growth": "No growth trace yet. The new agent is still a low-differentiation sphere.",
         "changed": "Changed",
         "settings": "Settings",
@@ -190,11 +193,24 @@ UI_TEXT = {
 
 
 def detect_ui_language() -> str:
+    candidates = [
+        os.environ.get("LANGUAGE", ""),
+        os.environ.get("LC_ALL", ""),
+        os.environ.get("LC_MESSAGES", ""),
+        os.environ.get("LANG", ""),
+    ]
     try:
-        language = (locale.getlocale()[0] or "").lower()
+        candidates.append(locale.getlocale()[0] or "")
     except Exception:
-        language = ""
-    return "zh" if language.startswith("zh") or "chinese" in language else "en"
+        pass
+    try:
+        candidates.append(locale.getencoding())
+    except Exception:
+        pass
+    joined = " ".join(candidates).lower()
+    if any(marker in joined for marker in ["zh", "chinese", "china", "cp936", "gbk", "gb2312", "936"]):
+        return "zh"
+    return "en"
 
 
 def load_font(size: int, bold: bool = False) -> ImageFont.ImageFont:
@@ -1995,7 +2011,7 @@ class DesktopOrb:
         y += 30
 
         if runtime_decision:
-            decision_title = "当前决策" if self.lang == "zh" else "Decision"
+            decision_title = tx["decision"]
             label = runtime_decision.get("label", tx["unknown"])
             conf = pct(runtime_decision.get("confidence", 0))
             draw.text((x, y), f"{decision_title}: {label}", font=self.font_body, fill=(255, 238, 184, 242))
@@ -2160,19 +2176,40 @@ def write_signal(thinking: bool, path: Path = SIGNAL_FILE) -> None:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Transparent desktop PKM orb pet")
+    lang = detect_ui_language()
+    cli_text = {
+        "zh": {
+            "description": "透明桌面 PKM 人格球宠物",
+            "console": "以桌面观察台模式启动",
+            "x": "初始窗口 x 坐标",
+            "y": "初始窗口 y 坐标",
+            "preview": "渲染一张透明预览 PNG 后退出",
+            "preview_console": "渲染一张桌面观察台预览 PNG 后退出",
+            "set_thinking": "设置桌面人格球思考信号后退出",
+        },
+        "en": {
+            "description": "Transparent desktop PKM orb pet",
+            "console": "start in desktop observatory mode",
+            "x": "initial window x position",
+            "y": "initial window y position",
+            "preview": "render one transparent preview PNG and exit",
+            "preview_console": "render one desktop observatory preview PNG and exit",
+            "set_thinking": "set desktop orb thinking signal and exit",
+        },
+    }[lang]
+    parser = argparse.ArgumentParser(description=cli_text["description"])
     parser.add_argument("--agent-id", default="default", help=argparse.SUPPRESS)
     parser.add_argument("--visible", type=Path, default=DEFAULT_VISIBLE)
     parser.add_argument("--signal", type=Path, default=SIGNAL_FILE)
     parser.add_argument("--size", type=int, default=112)
     parser.add_argument("--opacity", type=float, default=0.88)
-    parser.add_argument("--console", action="store_true", help="start in desktop observatory mode")
-    parser.add_argument("--x", type=int, help="initial window x position")
-    parser.add_argument("--y", type=int, help="initial window y position")
-    parser.add_argument("--preview", type=Path, help="render one transparent preview PNG and exit")
-    parser.add_argument("--preview-console", type=Path, help="render one desktop observatory preview PNG and exit")
+    parser.add_argument("--console", action="store_true", help=cli_text["console"])
+    parser.add_argument("--x", type=int, help=cli_text["x"])
+    parser.add_argument("--y", type=int, help=cli_text["y"])
+    parser.add_argument("--preview", type=Path, help=cli_text["preview"])
+    parser.add_argument("--preview-console", type=Path, help=cli_text["preview_console"])
     parser.add_argument("--preview-thinking", action="store_true")
-    parser.add_argument("--set-thinking", choices=["on", "off"], help="set desktop orb thinking signal and exit")
+    parser.add_argument("--set-thinking", choices=["on", "off"], help=cli_text["set_thinking"])
     return parser.parse_args()
 
 

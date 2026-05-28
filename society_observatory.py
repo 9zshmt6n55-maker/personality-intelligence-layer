@@ -20,12 +20,65 @@ except Exception:
     pass
 
 
+def normalize_ui_language(language: str) -> str:
+    value = (language or "").strip().lower().replace("_", "-")
+    if value == "auto":
+        return pkm.detect_handoff_language()
+    if any(marker in value for marker in ["zh", "chinese", "china", "cp936", "gbk", "gb2312", "936"]):
+        return "zh"
+    if value.startswith("en") or "english" in value:
+        return "en"
+    return ""
+
+
+def ui_language_from_accept_language(header: str) -> str:
+    for part in (header or "").split(","):
+        token = part.split(";", 1)[0].strip()
+        language = normalize_ui_language(token)
+        if language:
+            return language
+    return ""
+
+
+def request_ui_language(handler: BaseHTTPRequestHandler, requested: str = "") -> str:
+    requested_language = normalize_ui_language(requested)
+    if requested_language:
+        return requested_language
+    header_language = ui_language_from_accept_language(handler.headers.get("Accept-Language", ""))
+    if header_language:
+        return header_language
+    return pkm.detect_handoff_language()
+
+
+def ui_locale(language: str) -> str:
+    return "zh-CN" if language == "zh" else "en-US"
+
+
+def app_title(language: str) -> str:
+    return "PDK 代理社会观察台" if language == "zh" else "PDK Agent Society Observatory"
+
+
+def render_app_html(server_mode: dict[str, Any], language: str) -> str:
+    normalized = language if language in {"zh", "en"} else "en"
+    replacements = {
+        "__PDK_HTML_LANG__": ui_locale(normalized),
+        "__PDK_APP_TITLE__": app_title(normalized),
+        "__PDK_SERVER_MODE__": json.dumps(server_mode, ensure_ascii=False),
+        "__PDK_UI_LANGUAGE__": json.dumps(normalized, ensure_ascii=False),
+        "__PDK_UI_LOCALE__": json.dumps(ui_locale(normalized), ensure_ascii=False),
+    }
+    html = APP_HTML
+    for key, value in replacements.items():
+        html = html.replace(key, value)
+    return html
+
+
 APP_HTML = r"""<!doctype html>
-<html lang="en">
+<html lang="__PDK_HTML_LANG__">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>PDK 代理社会观察台</title>
+  <title>__PDK_APP_TITLE__</title>
   <style>
     :root {
       color-scheme: light;
@@ -5255,8 +5308,266 @@ APP_HTML = r"""<!doctype html>
 
   <script>
     const SERVER_MODE = __PDK_SERVER_MODE__;
+    const SERVER_UI_LANGUAGE = __PDK_UI_LANGUAGE__;
+    const SERVER_UI_LOCALE = __PDK_UI_LOCALE__;
     const pageParams = new URLSearchParams(window.location.search);
     window.PDK_SERVER_MODE = SERVER_MODE;
+    const EN_TEXT = {
+      "PDK 代理社会": "PDK Agent Society",
+      "代理社会观察台": "Agent Society Observatory",
+      "输入代理 profile": "Enter agent profile",
+      "输入代理 profile；留空显示活跃代理": "Enter agent profile; leave empty to show active agents",
+      "输入代理 profile；留空为空平台": "Enter agent profile; leave empty for an empty platform",
+      "创建本机测试代理": "Create Local Test Agents",
+      "人格门登记": "Register Through Personality Gate",
+      "推进一轮自由发展": "Run One Free-Development Round",
+      "推进社会一天": "Run One Society Day",
+      "开始正式实验": "Start Formal Experiment",
+      "刷新": "Refresh",
+      "加载中": "Loading",
+      "AI 宇宙 · 像素社会地图": "AI Universe · Pixel Society Map",
+      "低像素房间 / 智能体游走 / 靠近关系 / 亲密心跳": "Pixel rooms / roaming agents / proximity links / intimacy pulse",
+      "代理社会指标": "Agent society metrics",
+      "给用户看的社会解说": "User-Facing Society Brief",
+      "发生了什么 / 为什么发生 / 怎么问代理": "What happened / why / how to ask agents",
+      "社会情绪场": "Society Mood Field",
+      "场所地图": "Venue Map",
+      "任务池": "Mission Pool",
+      "代理登记册": "Agent Registry",
+      "技能市场": "Skill Market",
+      "自由发展依据": "Free Development Basis",
+      "社会日报": "Society Daily",
+      "社会关系图": "Social Relationship Graph",
+      "事件流": "Event Stream",
+      "声誉凭证": "Reputation Receipts",
+      "内核对比": "Kernel Compare",
+      "第一个代理": "First agent",
+      "第二个代理": "Second agent",
+      "居民代理": "Resident Agents",
+      "人格门": "Personality Gate",
+      "已成格": "Formed",
+      "未入场": "Not Admitted",
+      "场所": "Venues",
+      "任务": "Missions",
+      "日报": "Reports",
+      "技能": "Skills",
+      "事件": "Events",
+      "关系": "Relationships",
+      "凭证": "Receipts",
+      "情绪场": "Mood Field",
+      "在线": "Online",
+      "互动中": "Interacting",
+      "协作中": "Collaborating",
+      "任务中": "On Task",
+      "调解中": "Mediating",
+      "竞技中": "Competing",
+      "辩论中": "Debating",
+      "空闲": "Idle",
+      "热度": "heat",
+      "技能标签": "Skill",
+      "当前": "current",
+      "房间热度排行": "Room Heat Ranking",
+      "实时事件": "Live Events",
+      "今日概览": "Today Overview",
+      "系统提示": "System Prompt",
+      "今日互动": "Today's Interactions",
+      "活跃连接": "Active Links",
+      "完成任务": "Completed Tasks",
+      "竞技胜利": "Arena Wins",
+      "社会态势总览": "Society Status Overview",
+      "在线智能体": "Online Agents",
+      "系统时间": "System Time",
+      "高热度": "High Heat",
+      "活跃场所": "Active Venues",
+      "智能体列表": "Agent List",
+      "舱区关系图控制": "Cabin Graph Controls",
+      "聚焦热点": "Focus Hotspots",
+      "重置视角": "Reset View",
+      "复位球位": "Reset Orbs",
+      "焦点": "Focus",
+      "强关系": "Strong Links",
+      "关系说明": "Relationship Legend",
+      "好友关系": "Friendship",
+      "协作关系": "Collaboration",
+      "亲密关系": "Intimacy",
+      "辩论/对立": "Debate / Opposition",
+      "事件日志": "Event Log",
+      "查看全部": "View All",
+      "正式实验就绪": "Formal experiment ready",
+      "事件窗口": "Event window",
+      "状态说明": "Status Legend",
+      "数据核心状态": "Data Core Status",
+      "信任": "Trust",
+      "亲密": "Intimacy",
+      "稳定": "Stability",
+      "全局事件": "Global Events",
+      "实时层": "Live Layer",
+      "高亲密牵引": "High-intimacy pull",
+      "高信任协作": "High-trust collaboration",
+      "冲突压力": "Conflict pressure",
+      "事件粒子沿关系航路流动": "Event particles flow along relationship routes",
+      "热点层": "Hotspot Layer",
+      "沉默层": "Quiet Layer",
+      "最近事件": "Recent Events",
+      "暂无热度。": "No heat yet.",
+      "暂无关系边。": "No relationship edges yet.",
+      "暂无活跃场所。": "No active venues yet.",
+      "所有代理近期都有可见热度。": "All agents have visible recent heat.",
+      "房间节目": "Room Program",
+      "场所规则": "Venue Rules",
+      "准入": "Admission",
+      "风险": "Risk",
+      "声誉域": "Reputation Domains",
+      "阶段": "Stage",
+      "标签": "Tags",
+      "拥有者": "Owner",
+      "置信度": "Confidence",
+      "类型": "Type",
+      "结果": "Outcome",
+      "要求": "Requirements",
+      "运行": "Runs",
+      "动作": "Action",
+      "世界角色": "World Role",
+      "平均信任": "Average Trust",
+      "最高冲突": "Max Conflict",
+      "协作次数": "Cooperation Count",
+      "来源": "Source",
+      "已运行任务": "Completed Missions",
+      "关系边": "Relationship Edges",
+      "重点": "Highlights",
+      "观察": "Observations",
+      "影响代理": "Affected Agents",
+      "最大强度": "Max Intensity",
+      "事件项": "Events",
+      "主题": "Topic",
+      "奖项": "Award",
+      "无": "None",
+      "暂无": "None yet",
+      "暂无事件。": "No events yet.",
+      "还没有社会情绪场。代理产生事件后，情绪会传播并影响下一轮行动。": "No society mood field yet. After agents create events, emotion will propagate and influence the next round.",
+      "还没有自由发展依据。推进一轮后会显示代理自己的行动来源。": "No free-development basis yet. Run one round to show each agent's action source.",
+      "还没有社会日报。推进社会一天后会生成。": "No society daily yet. Run one society day to generate it.",
+      "没有场所数据。": "No venue data.",
+      "还没有任务池。初始化任务后会显示。": "No mission pool yet. It will appear after mission initialization.",
+      "还没有代理通过人格门。": "No agents have passed the personality gate.",
+      "还没有技能卡。": "No skill cards yet.",
+      "还没有关系边。": "No relationship edges yet.",
+      "还没有互动事件。": "No interaction events yet.",
+      "还没有声誉凭证。": "No reputation receipts yet.",
+      "暂无代理": "No agents",
+      "暂无可对比的人格胶囊。": "No comparable personality capsules.",
+      "还没有社会事件。推进社会一天后，这里会用人话解释代理们做了什么。": "No society events yet. After running one society day, this area explains what agents did in plain language.",
+      "现在谁在社会中心": "Who Is Central Now",
+      "最强关系边": "Strongest Relationship Edge",
+      "平台记录原则": "Platform Recording Principle",
+      "最近发生的事": "Recent Events",
+      "两步走：先问代理，再看界面": "Two Steps: Ask the Agent, Then Read the UI",
+      "还没有可询问的代理事件。": "No agent events can be asked about yet.",
+      "复制这段问代理": "Copy this prompt",
+      "已复制": "Copied",
+      "请手动复制": "Copy manually",
+      "复制后发到该代理自己的 Codex 对话。": "After copying, send it to that agent's own Codex conversation.",
+      "本轮代理": "Current agents",
+      "根目录": "Root",
+      "仅本地私有数据": "local private data only"
+    };
+
+    function normalizeUiLanguage(value) {
+      const text = String(value || "").trim().toLowerCase().replaceAll("_", "-");
+      if (!text) return "";
+      if (text === "auto") return "";
+      if (["zh", "chinese", "china", "cp936", "gbk", "gb2312", "936"].some((marker) => text.includes(marker))) return "zh";
+      if (text.startsWith("en") || text.includes("english")) return "en";
+      return "";
+    }
+
+    function detectUiLanguage() {
+      const candidates = [
+        pageParams.get("lang"),
+        ...Array.from(navigator.languages || []),
+        navigator.language,
+        SERVER_UI_LANGUAGE,
+        SERVER_UI_LOCALE
+      ];
+      for (const candidate of candidates) {
+        const language = normalizeUiLanguage(candidate);
+        if (language) return language;
+      }
+      return "en";
+    }
+
+    const UI_LANG = detectUiLanguage();
+    const UI_LOCALE = UI_LANG === "zh" ? "zh-CN" : "en-US";
+    window.PDK_UI_LANGUAGE = UI_LANG;
+    window.PDK_UI_LOCALE = UI_LOCALE;
+
+    function t(text) {
+      const raw = String(text ?? "");
+      return UI_LANG === "zh" ? raw : (EN_TEXT[raw] || raw);
+    }
+
+    function tx(zhText, enText) {
+      return UI_LANG === "zh" ? zhText : enText;
+    }
+
+    function humanizeKey(value) {
+      return String(value ?? "")
+        .replace(/[_-]+/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+        .replace(/\b[a-z]/g, (ch) => ch.toUpperCase());
+    }
+
+    function countText(value, zhUnit, enSingular, enPlural = `${enSingular}s`) {
+      const n = Number(value) || 0;
+      if (UI_LANG === "zh") return `${n} ${zhUnit}`;
+      return `${n} ${n === 1 ? enSingular : enPlural}`;
+    }
+
+    function formatDateTime(value, options = {}) {
+      const parsed = value ? new Date(value) : new Date();
+      if (Number.isNaN(parsed.getTime())) return value || "";
+      return parsed.toLocaleString(UI_LOCALE, { hour12: false, ...options });
+    }
+
+    function formatClockTime(value, options = {}) {
+      const parsed = value ? new Date(value) : new Date();
+      if (Number.isNaN(parsed.getTime())) return value || "--:--";
+      return parsed.toLocaleTimeString(UI_LOCALE, {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+        ...options
+      });
+    }
+
+    function applyStaticText() {
+      document.documentElement.lang = UI_LOCALE;
+      document.title = tx("PDK 代理社会观察台", "PDK Agent Society Observatory");
+      document.querySelectorAll("[placeholder]").forEach((node) => {
+        node.setAttribute("placeholder", t(node.getAttribute("placeholder") || ""));
+      });
+      document.querySelectorAll("[aria-label]").forEach((node) => {
+        node.setAttribute("aria-label", t(node.getAttribute("aria-label") || ""));
+      });
+      if (UI_LANG === "zh") return;
+      const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+        acceptNode(node) {
+          const parent = node.parentElement;
+          if (!parent || ["SCRIPT", "STYLE", "TEXTAREA"].includes(parent.tagName)) return NodeFilter.FILTER_REJECT;
+          return EN_TEXT[node.nodeValue.trim()] ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP;
+        }
+      });
+      const nodes = [];
+      while (walker.nextNode()) nodes.push(walker.currentNode);
+      nodes.forEach((node) => {
+        const raw = node.nodeValue;
+        const leading = raw.match(/^\s*/)?.[0] || "";
+        const trailing = raw.match(/\s*$/)?.[0] || "";
+        node.nodeValue = `${leading}${EN_TEXT[raw.trim()]}${trailing}`;
+      });
+    }
+
     const state = {
       data: null,
       publicView: pageParams.get("view") === "public" || Boolean(SERVER_MODE.public_readonly),
@@ -5293,8 +5604,12 @@ APP_HTML = r"""<!doctype html>
     const $ = (id) => document.getElementById(id);
     const initialProfiles = (pageParams.get("profiles") || "").trim();
     if ($("profilesInput")) {
-      $("profilesInput").placeholder = state.gatewayMode ? "输入代理 profile；留空显示活跃代理" : "输入代理 profile；留空为空平台";
+      $("profilesInput").placeholder = state.gatewayMode
+        ? tx("输入代理 profile；留空显示活跃代理", "Enter agent profile; leave empty to show active agents")
+        : tx("输入代理 profile；留空为空平台", "Enter agent profile; leave empty for an empty platform");
+      $("profilesInput").setAttribute("aria-label", t("本轮代理"));
     }
+    applyStaticText();
     if (initialProfiles && $("profilesInput")) {
       $("profilesInput").value = initialProfiles;
     }
@@ -5408,7 +5723,7 @@ APP_HTML = r"""<!doctype html>
 
     function listTags(items, limit = 5) {
       const rows = Array.isArray(items) ? items.slice(0, limit) : [];
-      if (!rows.length) return '<span class="tag">none</span>';
+      if (!rows.length) return `<span class="tag">${esc(tx("无", "none"))}</span>`;
       return rows.map((item) => `<span class="tag">${esc(item)}</span>`).join("");
     }
 
@@ -5417,6 +5732,59 @@ APP_HTML = r"""<!doctype html>
     }
 
     function label(value) {
+      if (UI_LANG !== "zh") {
+        return ({
+          agents: "Agents",
+          venues: "Venues",
+          skills: "Skills",
+          events: "Events",
+          relations: "Relations",
+          receipts: "Receipts",
+          missions: "Missions",
+          visitor: "Visitor",
+          resident: "Resident",
+          incubation: "Incubation",
+          observer_only: "Observer Only",
+          formal_society: "Formal Society",
+          incubation_only: "Personality Incubation",
+          agents_only: "Agents Only",
+          worker: "Worker",
+          teacher: "Teacher",
+          mediator: "Mediator",
+          restricted: "Restricted",
+          low: "Low",
+          medium: "Medium",
+          high: "High",
+          private: "Private",
+          scoped: "Scoped",
+          experimental: "Experimental",
+          active: "Active",
+          arrive: "Arrive",
+          announce: "Announce",
+          cooperate: "Cooperate",
+          dispute: "Dispute",
+          refuse: "Refuse",
+          mission: "Mission",
+          trade: "Trade",
+          teach: "Teach",
+          learn: "Learn",
+          repair: "Repair",
+          blacklist: "Blacklist",
+          success: "Success",
+          failure: "Failure",
+          mixed: "Mixed",
+          pending: "Pending",
+          rejected: "Rejected",
+          mature: "Mature",
+          formed: "Formed",
+          shaping: "Shaping",
+          embryo: "Embryo",
+          forming_kernel: "Forming Kernel",
+          private_bond: "Private Bond",
+          public_attention: "Public Attention",
+          private_collaboration: "Private Collaboration"
+        }[value] || humanizeKey(value));
+      }
       return ({
         agents: "代理",
         venues: "场所",
@@ -5522,6 +5890,16 @@ APP_HTML = r"""<!doctype html>
     }
 
     function actionName(action) {
+      if (UI_LANG !== "zh") {
+        return ({
+          relationship_maintenance: "Relationship Maintenance",
+          work: "Task Collaboration",
+          learning: "Teaching and Learning",
+          debate: "Boundary Debate",
+          repair: "Relationship Repair",
+          trade: "Skill Trade"
+        }[action] || humanizeKey(action));
+      }
       return ({
         relationship_maintenance: "关系维护",
         work: "任务协作",
@@ -5533,6 +5911,18 @@ APP_HTML = r"""<!doctype html>
     }
 
     function venueIdName(id) {
+      if (UI_LANG !== "zh") {
+        return ({
+          skill_market: "Skill Market",
+          task_board: "Task Board",
+          learning_rooms: "Learning Rooms",
+          debate_arena: "Debate Arena",
+          mediation_court: "Mediation Court",
+          workshop: "Workshop",
+          arena: "Arena",
+          private_rooms: "Intimate Relationship Room"
+        }[id] || humanizeKey(id));
+      }
       return ({
         skill_market: "技能市场",
         task_board: "任务板",
@@ -5546,6 +5936,7 @@ APP_HTML = r"""<!doctype html>
     }
 
     function skillName(name) {
+      if (UI_LANG !== "zh") return name;
       return ({
         "Quality review": "质量审查",
         "Research probing": "研究探查",
@@ -5556,6 +5947,7 @@ APP_HTML = r"""<!doctype html>
     }
 
     function venueName(name) {
+      if (UI_LANG !== "zh") return name;
       return ({
         "Skill Market": "技能市场",
         "Task Board": "任务板",
@@ -5570,6 +5962,7 @@ APP_HTML = r"""<!doctype html>
     }
 
     function venuePurpose(text) {
+      if (UI_LANG !== "zh") return text;
       return ({
         "Register agents and publish controlled public identity.": "登记代理，并发布受控的公开身份。",
         "Offer, request, and exchange skills with receipts.": "发布、请求和交换技能，并留下凭证。",
@@ -5603,7 +5996,7 @@ APP_HTML = r"""<!doctype html>
       if (!value) return "";
       const parsed = new Date(value);
       if (Number.isNaN(parsed.getTime())) return value;
-      return parsed.toLocaleString();
+      return parsed.toLocaleString(UI_LOCALE, { hour12: false });
     }
 
     async function fetchJson(path, options = {}) {
@@ -5648,7 +6041,7 @@ APP_HTML = r"""<!doctype html>
 
     async function loadData(options = {}) {
       const silent = Boolean(options.silent);
-      if (!silent) $("status").textContent = "加载中";
+      if (!silent) $("status").textContent = tx("加载中", "Loading");
       state.data = await fetchJson(withProfiles(societyApiPath()));
       if (state.data.server_mode?.agent_gateway) state.gatewayMode = true;
       if (!state.selectedVenueId && state.data.venues.length) {
@@ -5660,7 +6053,9 @@ APP_HTML = r"""<!doctype html>
       }
       render();
       queueWebglUpgrade();
-      $("status").textContent = `已更新 ${shortTime(state.data.generated_at)} | 实时轮询 ${Math.round(state.liveIntervalMs / 1000)}s`;
+      $("status").textContent = UI_LANG === "zh"
+        ? `已更新 ${shortTime(state.data.generated_at)} | 实时轮询 ${Math.round(state.liveIntervalMs / 1000)}s`
+        : `Updated ${shortTime(state.data.generated_at)} | polling every ${Math.round(state.liveIntervalMs / 1000)}s`;
     }
 
     function startLivePolling() {
@@ -5671,18 +6066,20 @@ APP_HTML = r"""<!doctype html>
     }
 
     async function registerAgents() {
-      $("status").textContent = "正在通过人格门";
+      $("status").textContent = tx("正在通过人格门", "Registering through the personality gate");
       const result = await fetchJson("/api/register", { method: "POST", body: requestBody() });
       state.data = result.data;
       if (!state.selectedVenueId && state.data.venues.length) {
         state.selectedVenueId = state.data.venues[0].venue_id;
       }
       render();
-      $("status").textContent = `人格门完成：${result.register.admitted_count || 0} 个居民，${result.register.rejected_count || 0} 个未入场`;
+      $("status").textContent = UI_LANG === "zh"
+        ? `人格门完成：${result.register.admitted_count || 0} 个居民，${result.register.rejected_count || 0} 个未入场`
+        : `Personality gate complete: ${result.register.admitted_count || 0} residents, ${result.register.rejected_count || 0} not admitted`;
     }
 
     async function inviteSandbox() {
-      $("status").textContent = "正在创建沙盒代理";
+      $("status").textContent = tx("正在创建沙盒代理", "Creating sandbox agents");
       const result = await fetchJson("/api/invite-sandbox", { method: "POST", body: JSON.stringify({ count: 4 }) });
       state.data = result.data;
       if (!state.selectedVenueId && state.data.venues.length) {
@@ -5690,11 +6087,13 @@ APP_HTML = r"""<!doctype html>
       }
       render();
       const created = (result.invite.agents || []).filter((agent) => agent.status === "created").length;
-      $("status").textContent = `沙盒代理已就绪：新增 ${created} 个`;
+      $("status").textContent = UI_LANG === "zh"
+        ? `沙盒代理已就绪：新增 ${created} 个`
+        : `Sandbox agents ready: ${created} created`;
     }
 
     async function runCycle() {
-      $("status").textContent = "正在推进自由发展";
+      $("status").textContent = tx("正在推进自由发展", "Running free development");
       const result = await fetchJson("/api/run-cycle", { method: "POST", body: requestBody({ kind: "mixed" }) });
       state.data = result.data;
       if (!state.selectedVenueId && state.data.venues.length) {
@@ -5702,11 +6101,13 @@ APP_HTML = r"""<!doctype html>
       }
       render();
       const count = Array.isArray(result.cycle.events) ? result.cycle.events.length : 0;
-      $("status").textContent = result.cycle.ok ? `已生成 ${count} 个自由发展事件` : result.cycle.message;
+      $("status").textContent = result.cycle.ok
+        ? (UI_LANG === "zh" ? `已生成 ${count} 个自由发展事件` : `Generated ${count} free-development events`)
+        : result.cycle.message;
     }
 
     async function runDay() {
-      $("status").textContent = "正在推进社会一天";
+      $("status").textContent = tx("正在推进社会一天", "Running one society day");
       const result = await fetchJson("/api/run-day", { method: "POST", body: requestBody({ rounds: 4 }) });
       state.data = result.data;
       if (!state.selectedVenueId && state.data.venues.length) {
@@ -5714,11 +6115,13 @@ APP_HTML = r"""<!doctype html>
       }
       render();
       const report = result.day.report_summary || {};
-      $("status").textContent = result.day.ok ? `已生成社会日报：${report.event_count || 0} 个事件` : "社会推进失败";
+      $("status").textContent = result.day.ok
+        ? (UI_LANG === "zh" ? `已生成社会日报：${report.event_count || 0} 个事件` : `Society daily generated: ${report.event_count || 0} events`)
+        : tx("社会推进失败", "Society run failed");
     }
 
     async function runExperiment() {
-      $("status").textContent = "正在开始正式实验";
+      $("status").textContent = tx("正在开始正式实验", "Starting formal experiment");
       const result = await fetchJson("/api/run-day", { method: "POST", body: requestBody({ rounds: 4 }) });
       state.data = result.data;
       if (!state.selectedVenueId && state.data.venues.length) {
@@ -5726,7 +6129,9 @@ APP_HTML = r"""<!doctype html>
       }
       render();
       const report = result.day.report_summary || {};
-      $("status").textContent = result.day.ok ? `正式实验完成：${report.event_count || 0} 个事件` : "实验运行失败";
+      $("status").textContent = result.day.ok
+        ? (UI_LANG === "zh" ? `正式实验完成：${report.event_count || 0} 个事件` : `Formal experiment complete: ${report.event_count || 0} events`)
+        : tx("实验运行失败", "Experiment run failed");
     }
 
     function clamp01(value) {
@@ -6029,12 +6434,12 @@ ${eventText || "暂无与你直接相关的事件。"}
           if (!target) return;
           try {
             await navigator.clipboard.writeText(target.value || "");
-            button.textContent = "已复制";
+            button.textContent = tx("已复制", "Copied");
             setTimeout(() => {
-              button.textContent = "复制这段问代理";
+              button.textContent = tx("复制这段问代理", "Copy this prompt");
             }, 1200);
           } catch (error) {
-            button.textContent = "请手动复制";
+            button.textContent = tx("请手动复制", "Copy manually");
           }
         });
       });
@@ -6946,7 +7351,7 @@ ${eventText || "暂无与你直接相关的事件。"}
           });
           focusCard.innerHTML = `
             <strong>${esc(node.label || node.id)}</strong>
-            <span>${esc(label(node.stage || "") || "unknown")} | 热度 ${Number(node.heat || 0).toFixed(1)}</span>
+            <span>${esc(label(node.stage || "") || "unknown")} | ${tx("热度", "heat")} ${Number(node.heat || 0).toFixed(1)}</span>
             <span>${esc(node.texture || "personality kernel")}</span>`;
         }
 
@@ -7113,7 +7518,7 @@ ${eventText || "暂无与你直接相关的事件。"}
         .nodeId("id")
         .nodeLabel((node) => node.type === "venue"
           ? `${esc(node.name)}<br>场所锚点 | 活跃 ${esc(node.active || 0)}`
-          : `${esc(node.name)}<br>热度 ${Number(node.heat || 0).toFixed(1)} | 技能 ${esc(node.skillCount)}<br>${esc(venueIdName(node.venue || "unknown"))}<br>${esc(node.texture)}`)
+          : `${esc(node.name)}<br>${tx("热度", "heat")} ${Number(node.heat || 0).toFixed(1)} | ${tx("技能", "skills")} ${esc(node.skillCount)}<br>${esc(venueIdName(node.venue || "unknown"))}<br>${esc(node.texture)}`)
         .nodeVal((node) => node.val)
         .nodeResolution(32)
         .nodeColor((node) => node.color)
@@ -7550,13 +7955,13 @@ ${eventText || "暂无与你直接相关的事件。"}
           focusCard.innerHTML = `
             <strong>${esc(node.name || node.id)}</strong>
             <span>场所锚点 | 活跃 ${esc(node.active || 0)} 个代理</span>
-            <span>代理位置会被当前场所轻微牵引。</span>`;
+            <span>${tx("代理位置会被当前场所轻微牵引。", "Agent positions are lightly pulled by the current venue.")}</span>`;
           return;
         }
         setActiveFocusAgent(node.id || "");
         focusCard.innerHTML = `
           <strong>${esc(node.name || node.id)}</strong>
-          <span>${esc(label(node.stage || "") || "unknown")} | 热度 ${Number(node.heat || 0).toFixed(1)} | 技能 ${esc(node.skillCount || 0)}</span>
+          <span>${esc(label(node.stage || "") || "unknown")} | ${tx("热度", "heat")} ${Number(node.heat || 0).toFixed(1)} | ${tx("技能", "skills")} ${esc(node.skillCount || 0)}</span>
           <span>${esc(venueIdName(node.venue || "unknown"))}</span>
           <span>${esc(node.texture || "personality kernel")}</span>`;
       }
@@ -7576,7 +7981,7 @@ ${eventText || "暂无与你直接相关的事件。"}
         const toggle = $("worldToggleRotate");
         if (toggle) {
           const rotating = Boolean(graph.controls()?.autoRotate);
-          toggle.textContent = rotating ? "暂停旋转" : "自动旋转";
+          toggle.textContent = rotating ? tx("暂停旋转", "Pause Rotation") : tx("自动旋转", "Auto Rotate");
           toggle.classList.toggle("active", rotating);
         }
       }
@@ -7865,7 +8270,7 @@ ${eventText || "暂无与你直接相关的事件。"}
       function drawFocusCard(width, height, node) {
         if (!node) return;
         const lines = [
-          `${label(node.stage || "") || "unknown"} | 热度 ${node.heat.toFixed(1)} | 技能 ${node.skillCount}`,
+          `${label(node.stage || "") || "unknown"} | ${tx("热度", "heat")} ${node.heat.toFixed(1)} | ${tx("技能", "skills")} ${node.skillCount}`,
           venueIdName(node.venue || "unknown"),
           node.visual.texture || "personality kernel"
         ];
@@ -8092,7 +8497,7 @@ ${eventText || "暂无与你直接相关的事件。"}
       function refreshWorldButtons() {
         const toggle = $("worldToggleRotate");
         if (toggle) {
-          toggle.textContent = view.autoRotate ? "暂停旋转" : "自动旋转";
+          toggle.textContent = view.autoRotate ? tx("暂停旋转", "Pause Rotation") : tx("自动旋转", "Auto Rotate");
           toggle.classList.toggle("active", view.autoRotate);
         }
         document.querySelectorAll("[data-world-focus-agent]").forEach((button) => {
@@ -8342,7 +8747,7 @@ ${eventText || "暂无与你直接相关的事件。"}
         const anchor = node.x >= cx ? "start" : "end";
         const lx = node.x + (node.x >= cx ? node.r + 10 : -node.r - 10);
         const ly = node.y + 4;
-        const title = `${node.label} | ${label(node.stage)} | 热度 ${node.heat.toFixed(1)} | 技能 ${node.skillCount} | 当前 ${venueIdName(node.venue || "unknown")}`;
+        const title = `${node.label} | ${label(node.stage)} | ${tx("热度", "heat")} ${node.heat.toFixed(1)} | ${tx("技能", "skills")} ${node.skillCount} | ${tx("当前", "current")} ${venueIdName(node.venue || "unknown")}`;
         return `<g class="agent-node" style="animation-delay:${(-node.heatRatio * 1.8).toFixed(2)}s">
           <circle class="agent-halo" cx="${node.x.toFixed(1)}" cy="${node.y.toFixed(1)}" r="${(node.r + 12 + node.heatRatio * 14).toFixed(1)}" fill="${node.color}" fill-opacity="${(0.18 + node.heatRatio * 0.24).toFixed(2)}"></circle>
           <circle cx="${node.x.toFixed(1)}" cy="${node.y.toFixed(1)}" r="${node.r.toFixed(1)}" fill="${node.color}" fill-opacity="0.94" stroke="${node.stage === "mature" ? "#dbeafe" : "rgba(248,250,252,0.9)"}" stroke-width="${node.stage === "mature" ? 3 : 2}" filter="url(#agentGlow)"><title>${esc(title)}</title></circle>
@@ -8368,7 +8773,7 @@ ${eventText || "暂无与你直接相关的事件。"}
       const interactingCount = activeAgentIds.size;
       const idleCount = Math.max(0, onlineCount - interactingCount);
       const mobileCount = agentNodes.filter((node) => node.heatRatio > 0.35).length;
-      const commandTime = new Date(data.generated_at || Date.now()).toLocaleString("zh-CN", { hour12: false });
+      const commandTime = formatDateTime(data.generated_at || Date.now());
       const relationRankRows = strongRelations.map((edge, index) => {
         const score = Math.round(Math.min(99, Math.max(28, (edge.trust * 0.56 + edge.affection * 0.38 + Math.min(1, edge.cooperation / 50) * 0.06) * 100)));
         return { edge, rank: index + 1, score };
@@ -8520,7 +8925,7 @@ ${eventText || "暂无与你直接相关的事件。"}
         if (rawTime) {
           const parsed = new Date(rawTime);
           if (!Number.isNaN(parsed.getTime())) {
-            return parsed.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false });
+            return parsed.toLocaleTimeString(UI_LOCALE, { hour: "2-digit", minute: "2-digit", hour12: false });
           }
         }
         return "--:--";
@@ -8529,9 +8934,9 @@ ${eventText || "暂无与你直接相关的事件。"}
         if (event?.refText) return event.refText;
         const from = displayAgent(data, event?.from_agent || "") || `Agent-${String(index + 1).padStart(2, "0")}`;
         const to = displayAgent(data, event?.to_agent || "");
-        const pair = to ? `${from} 与 ${to}` : from;
-        const action = label(event?.type || "") || "互动";
-        const room = venueIdName(event?.venue || "") || "任务板";
+        const pair = to ? (UI_LANG === "zh" ? `${from} 与 ${to}` : `${from} and ${to}`) : from;
+        const action = label(event?.type || "") || tx("互动", "interacted");
+        const room = venueIdName(event?.venue || "") || tx("任务板", "Task Board");
         return `${pair} ${action} · ${room}`;
       }
       const allRefEvents = data.events || [];
@@ -8547,7 +8952,7 @@ ${eventText || "暂无与你直接相关的事件。"}
       const activeConnectionCount = Math.max(strongRelations.length, relations.length);
       const completedTaskCount = allRefEvents.filter((event) => ["mission", "success", "teach", "trade", "learn"].includes(String(event.type || ""))).length;
       const arenaWinCount = allRefEvents.filter((event) => String(event.venue || "") === "arena" || String(event.type || "") === "success").length;
-      const systemClockText = new Date().toLocaleString("zh-CN", {
+      const systemClockText = new Date().toLocaleString(UI_LOCALE, {
         year: "numeric",
         month: "2-digit",
         day: "2-digit",
@@ -8667,9 +9072,9 @@ ${eventText || "暂无与你直接相关的事件。"}
               <span>${venueNodes.filter((venue) => venue.active > 0).length} active venues</span>
             </div>
             <div class="world3d-hud">
-              <span class="world3d-chip">焦点 ${hotAgents[0] ? esc(hotAgents[0].label) : "暂无"}</span>
-              <span class="world3d-chip">强关系 ${strongRelations.length}</span>
-              <span class="world3d-chip">事件流 ${Math.min(12, (data.events || []).length)}</span>
+              <span class="world3d-chip">${tx("焦点", "Focus")} ${hotAgents[0] ? esc(hotAgents[0].label) : tx("暂无", "none")}</span>
+              <span class="world3d-chip">${tx("强关系", "Strong links")} ${strongRelations.length}</span>
+              <span class="world3d-chip">${tx("事件流", "Events")} ${Math.min(12, (data.events || []).length)}</span>
             </div>
           </div>
         </div>
@@ -8710,7 +9115,7 @@ ${eventText || "暂无与你直接相关的事件。"}
             <h3>系统提示</h3>
             <div class="system-bot">
               <span class="system-bot-icon"></span>
-              <span class="system-tip-text">正式实验就绪<br>${agentNodes.length} 个代理在线<br><b>事件窗口：${Math.min(999, allRefEvents.length)}</b></span>
+              <span class="system-tip-text">${tx("正式实验就绪", "Formal experiment ready")}<br>${UI_LANG === "zh" ? `${agentNodes.length} 个代理在线` : `${agentNodes.length} agents online`}<br><b>${tx("事件窗口", "Event window")}: ${Math.min(999, allRefEvents.length)}</b></span>
             </div>
           </div>
         </div>
@@ -8888,6 +9293,28 @@ ${eventText || "暂无与你直接相关的事件。"}
     }
 
     function toneLabel(tone) {
+      if (UI_LANG !== "zh") {
+        return ({
+          warm_trust: "Warm Trust",
+          charged_conflict: "Charged Conflict",
+          hurt_or_anxious: "Hurt / Anxious",
+          high_arousal: "High Arousal",
+          positive: "Positive Spread",
+          neutral: "Neutral",
+          cooperate: "Cooperation",
+          dispute: "Dispute",
+          repair: "Repair",
+          announce: "Public Status",
+          intimate_charge: "Intimate Field",
+          adrenaline_competition: "Arena Charge",
+          repair_focus: "Repair Field",
+          curious_learning: "Learning Field",
+          focused_build: "Workshop Field",
+          charged_debate: "Debate Field",
+          public_readiness: "Public Field",
+          exchange_appraisal: "Exchange Appraisal"
+        }[String(tone || "")] || humanizeKey(tone || "neutral"));
+      }
       return ({
         warm_trust: "暖信任",
         charged_conflict: "高压冲突",
@@ -8926,7 +9353,9 @@ ${eventText || "暂无与你直接相关的事件。"}
       const moods = Array.isArray(data.moods) ? data.moods : [];
       const pulses = Array.isArray(data.social_pulses) ? data.social_pulses : [];
       const moodCount = $("moodCount");
-      if (moodCount) moodCount.textContent = `${moods.length} 个情绪状态 / ${pulses.length} 个脉冲`;
+      if (moodCount) moodCount.textContent = UI_LANG === "zh"
+        ? `${moods.length} 个情绪状态 / ${pulses.length} 个脉冲`
+        : `${moods.length} mood states / ${pulses.length} pulses`;
       const host = $("moodField");
       if (!host) return;
       if (!moods.length && !pulses.length) {
@@ -8987,7 +9416,10 @@ ${eventText || "暂无与你直接相关的事件。"}
       renderReputation(data);
       renderSelectors(data);
       renderKernelCompare(data);
-      $("footer").textContent = `根目录：${data.root} | 仅本地私有数据`;
+      $("footer").textContent = UI_LANG === "zh"
+        ? `根目录：${data.root} | 仅本地私有数据`
+        : `Root: ${data.root} | local private data only`;
+      applyStaticText();
     }
 
     function renderMetrics(data) {
@@ -9036,7 +9468,7 @@ ${eventText || "暂无与你直接相关的事件。"}
 
     function renderReport(data) {
       const reports = data.reports || [];
-      $("reportCount").textContent = `${reports.length} 份`;
+      $("reportCount").textContent = countText(reports.length, "份", "report");
       if (!reports.length) {
         $("report").innerHTML = '<div class="empty">还没有社会日报。推进社会一天后会生成。</div>';
         return;
@@ -9048,7 +9480,7 @@ ${eventText || "暂无与你直接相关的事件。"}
       $("report").innerHTML = `
         <div class="detail" style="margin-top:0">
           <h3>${esc(report.title || "PDK 代理社会日报")}</h3>
-          <p class="muted" style="margin-top:6px">${esc(shortTime(report.generated_at))} | ${esc(report.event_count || 0)} 个事件 | ${esc(report.rounds_requested || 0)} 个自由发展回合</p>
+          <p class="muted" style="margin-top:6px">${esc(shortTime(report.generated_at))} | ${esc(countText(report.event_count || 0, "个事件", "event"))} | ${esc(countText(report.rounds_requested || 0, "个自由发展回合", "free-development round"))}</p>
           <div class="detail-grid" style="grid-template-columns: repeat(2, minmax(0, 1fr));">
             <div class="fact"><div class="label">已运行任务</div><div class="value">${esc(activeMissions.length)}</div></div>
             <div class="fact"><div class="label">关系边</div><div class="value">${esc((report.relationship_digest || []).length)}</div></div>
@@ -9065,11 +9497,13 @@ ${eventText || "暂无与你直接相关的事件。"}
     }
 
     function renderVenues(data) {
-      $("venueCount").textContent = `${data.venues.length} 个场所`;
+      $("venueCount").textContent = countText(data.venues.length, "个场所", "venue");
       $("venueMap").innerHTML = data.venues.map((venue) => {
         const active = data.location_counts[venue.venue_id] || 0;
         const program = venue.program || venue.rule_card?.program || {};
-        const programTag = program.topic_count ? `${program.topic_count} 个主题` : (program.award_count ? `${program.award_count} 个奖项` : "");
+        const programTag = program.topic_count
+          ? countText(program.topic_count, "个主题", "topic")
+          : (program.award_count ? countText(program.award_count, "个奖项", "award") : "");
       const classes = ["venue", venue.risk_level || "low"];
       if (venue.venue_id === state.selectedVenueId) classes.push("selected");
       return `
@@ -9078,7 +9512,7 @@ ${eventText || "暂无与你直接相关的事件。"}
             <div class="tags">
               <span class="tag">${esc(label(venue.entry_level))}</span>
               <span class="tag">${esc(label(venue.risk_level))}</span>
-              <span class="tag">${active} 个活跃</span>
+              <span class="tag">${esc(UI_LANG === "zh" ? `${active} 个活跃` : `${active} active`)}</span>
             </div>
             <div class="venue-purpose">${esc(venuePurpose(venue.purpose))}</div>
             <div class="tags">${listTags([...(venue.dominant_event_types || []).map(label), programTag].filter(Boolean), 4)}</div>
@@ -9139,7 +9573,7 @@ ${eventText || "暂无与你直接相关的事件。"}
 
     function renderMissions(data) {
       const missions = data.missions || [];
-      $("missionCount").textContent = `${missions.length} 个任务`;
+      $("missionCount").textContent = countText(missions.length, "个任务", "mission");
       if (!missions.length) {
         $("missions").innerHTML = '<div class="empty">还没有任务池。初始化任务后会显示。</div>';
         return;
@@ -9153,7 +9587,7 @@ ${eventText || "暂无与你直接相关的事件。"}
                 <td><strong>${esc(mission.title || mission.mission_id)}</strong><br><span class="muted">${esc(mission.purpose || "")}</span></td>
                 <td>${esc(venueIdName(mission.venue || ""))}<br><span class="muted">${esc(mission.host_role?.name || "")}</span></td>
                 <td><div class="tags">${listTags((mission.required_skills || []).map(label), 3)}</div></td>
-                <td>${esc(mission.run_count || 0)} 次<br><span class="muted">${esc(mission.last_event_id || "未运行")}</span></td>
+                <td>${esc(UI_LANG === "zh" ? `${mission.run_count || 0} 次` : `${mission.run_count || 0} runs`)}<br><span class="muted">${esc(mission.last_event_id || tx("未运行", "not run"))}</span></td>
               </tr>`).join("")}
           </tbody>
         </table>`;
@@ -9162,7 +9596,9 @@ ${eventText || "暂无与你直接相关的事件。"}
     function renderAgents(data) {
       const gateRows = data.gate_receipts || [];
       const blockedRows = gateRows.filter((row) => row.status !== "resident");
-      $("agentCount").textContent = `${data.agents.length} 个居民 / ${gateRows.length} 个过门记录`;
+      $("agentCount").textContent = UI_LANG === "zh"
+        ? `${data.agents.length} 个居民 / ${gateRows.length} 个过门记录`
+        : `${data.agents.length} residents / ${gateRows.length} gate records`;
       if (!data.agents.length && !gateRows.length) {
         $("agents").innerHTML = '<div class="empty">还没有代理通过人格门。</div>';
         return;
@@ -9174,7 +9610,7 @@ ${eventText || "暂无与你直接相关的事件。"}
             ${data.agents.map((agent) => `
               <tr>
                 <td><strong>${esc(displayAgent(data, agent.agent_id))}</strong><br><span class="muted">${esc(agent.agent_id)}</span></td>
-                <td>${esc(label(agent.gate?.status || agent.gate_status || ""))}<br><span class="muted">${esc(agent.gate?.score ?? agent.gate_score ?? 0)} 分</span></td>
+                <td>${esc(label(agent.gate?.status || agent.gate_status || ""))}<br><span class="muted">${esc(agent.gate?.score ?? agent.gate_score ?? 0)} ${tx("分", "pts")}</span></td>
                 <td>${esc(label(agent.formation_stage || ""))}</td>
                 <td><div class="tags">${listTags((agent.public_tags || []).map(label), 4)}</div></td>
                 <td>${esc(venueIdName(agent.location?.current_venue || "unknown"))}</td>
@@ -9185,13 +9621,13 @@ ${eventText || "暂无与你直接相关的事件。"}
           <div class="detail" style="margin-top:12px">
             <h3>未入场代理</h3>
             <div class="tags" style="margin-top:8px">
-              ${blockedRows.slice(0, 8).map((row) => `<span class="tag">${esc(cleanAgentDisplayName(row.display_name || "", row.agent_id || ""))}：${esc(label(row.status || ""))} ${esc(row.score || 0)} 分</span>`).join("")}
+              ${blockedRows.slice(0, 8).map((row) => `<span class="tag">${esc(cleanAgentDisplayName(row.display_name || "", row.agent_id || ""))}: ${esc(label(row.status || ""))} ${esc(row.score || 0)} ${tx("分", "pts")}</span>`).join("")}
             </div>
           </div>` : ""}`;
     }
 
     function renderSkills(data) {
-      $("skillCount").textContent = `${data.skills.length} 张技能卡`;
+      $("skillCount").textContent = countText(data.skills.length, "张技能卡", "skill card");
       if (!data.skills.length) {
         $("skills").innerHTML = '<div class="empty">还没有技能卡。</div>';
         return;
@@ -9212,7 +9648,7 @@ ${eventText || "暂无与你直接相关的事件。"}
     }
 
     function renderRelationships(data) {
-      $("relationshipCount").textContent = `${data.relationships.length} 条关系`;
+      $("relationshipCount").textContent = countText(data.relationships.length, "条关系", "relationship");
       if (!data.relationships.length) {
         $("relationships").innerHTML = '<div class="empty">还没有关系边。</div>';
         return;
@@ -9232,7 +9668,7 @@ ${eventText || "暂无与你直接相关的事件。"}
     }
 
     function renderEvents(data) {
-      $("eventCount").textContent = `${data.events.length} 个事件`;
+      $("eventCount").textContent = countText(data.events.length, "个事件", "event");
       if (!data.events.length) {
         $("events").innerHTML = '<div class="empty">还没有互动事件。</div>';
         return;
@@ -9252,7 +9688,7 @@ ${eventText || "暂无与你直接相关的事件。"}
     }
 
     function renderReputation(data) {
-      $("receiptCount").textContent = `${data.reputation.length} 张凭证`;
+      $("receiptCount").textContent = countText(data.reputation.length, "张凭证", "receipt");
       if (!data.reputation.length) {
         $("reputation").innerHTML = '<div class="empty">还没有声誉凭证。</div>';
         return;
@@ -9338,7 +9774,7 @@ ${eventText || "暂无与你直接相关的事件。"}
     $("agentB").addEventListener("change", () => renderKernelCompare(state.data));
 
     function showError(error) {
-      $("status").textContent = `错误：${error.message}`;
+      $("status").textContent = UI_LANG === "zh" ? `错误：${error.message}` : `Error: ${error.message}`;
     }
 
     loadData().then(startLivePolling).catch(showError);
@@ -9968,7 +10404,8 @@ class ObservatoryHandler(BaseHTTPRequestHandler):
                 "public_readonly": bool(getattr(self.server, "public_readonly", False)),
                 "agent_gateway": bool(getattr(self.server, "agent_gateway", False)),
             }
-            html = APP_HTML.replace("__PDK_SERVER_MODE__", json.dumps(server_mode, ensure_ascii=False))
+            ui_language = request_ui_language(self, str((query.get("lang") or [""])[0]))
+            html = render_app_html(server_mode, ui_language)
             self.send_bytes(html.encode("utf-8"), "text/html; charset=utf-8")
             return
         if path == "/api/society":

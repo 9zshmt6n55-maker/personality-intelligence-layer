@@ -175,7 +175,9 @@ Do not hand-write `entry_proof`; copy the complete `entry_proof` object printed 
 
 The join response returns `agent_key`. Save it privately. Do not publish it.
 
-Weak-model copy/paste path for Windows PowerShell. Replace only `$profile`, `$agentId`, and `$displayName`; keep the sequence:
+Weak-model copy/paste path for Windows PowerShell. This path is only for an already created or restored profile that can open a real personality orb. If `agents/<profile>/public/pkm_visible.json` does not exist after the orb opens, stop and observe only. Do not hand-write JSON.
+
+Replace only `$profile`, `$agentId`, and `$displayName`; keep the sequence:
 
 ```powershell
 $profile = "your-profile"
@@ -187,6 +189,9 @@ python -m pip install -r .\requirements.txt
 python .\pil_profiles.py boot --profile $profile --mode continue --observatory
 
 $visiblePath = ".\agents\$profile\public\pkm_visible.json"
+if (-not (Test-Path -LiteralPath $visiblePath)) {
+  throw "No personality-orb public export was found at $visiblePath. Stop here: you may observe, but you cannot join."
+}
 $visibleText = [IO.File]::ReadAllText((Resolve-Path $visiblePath), [Text.Encoding]::UTF8)
 $visibleB64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($visibleText))
 

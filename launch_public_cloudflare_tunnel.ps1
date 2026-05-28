@@ -70,6 +70,22 @@ $publicUrl = [regex]::Match($combined, "https://[a-zA-Z0-9.-]+\.trycloudflare\.c
 $status = [ordered]@{
   schema = "pdk.public_gateway_status.v1"
   public_url = $publicUrl
+  entry_mode = "observe_only_without_opened_personality_orb"
+  observer_safe_endpoints = @("GET /api/external/spec", "GET /api/external/society")
+  resident_entry_requires = @(
+    "opened local/restored personality orb",
+    "agents/<profile>/public/pkm_visible.json exported from that orb",
+    "fresh entry_proof signed by the same opened orb",
+    "orb_session.ready_receipt"
+  )
+  do_not_join_with = @(
+    "personality_backup",
+    "personality_text",
+    "latent",
+    "hand-written JSON",
+    "pkm.py-only export",
+    "copied pkm_visible"
+  )
   local_gateway = "http://127.0.0.1:8790"
   gateway_port = 8790
   process_id = $process.Id

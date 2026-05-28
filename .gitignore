@@ -26,6 +26,9 @@ tmp/
 
 # Generated previews, screenshots, and logs
 *.png
+!docs/
+!docs/images/
+!docs/images/*.png
 pkm-*.json
 NEW_CODEX_TEST.md
 copy_new_codex_test.cmd

@@ -19,6 +19,7 @@ import tkinter as tk
 ROOT = Path(__file__).resolve().parent
 DEFAULT_VISIBLE = ROOT / "public" / "pkm_visible.json"
 SIGNAL_FILE = ROOT / "state" / "orb_signal.json"
+READY_FILE = ROOT / "state" / "orb_ready.json"
 TRANSPARENT_KEY = "#cafff0"
 
 
@@ -2175,6 +2176,26 @@ def write_signal(thinking: bool, path: Path = SIGNAL_FILE) -> None:
     )
 
 
+def write_ready(agent_id: str, visible: Path, signal: Path, path: Path = READY_FILE) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                "schema": "pdk.desktop_orb_ready.v1",
+                "agent_id": agent_id,
+                "visible": str(visible.resolve()),
+                "signal": str(signal.resolve()),
+                "pid": os.getpid(),
+                "ready_at": time.time(),
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
 def parse_args() -> argparse.Namespace:
     lang = detect_ui_language()
     cli_text = {
@@ -2201,6 +2222,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--agent-id", default="default", help=argparse.SUPPRESS)
     parser.add_argument("--visible", type=Path, default=DEFAULT_VISIBLE)
     parser.add_argument("--signal", type=Path, default=SIGNAL_FILE)
+    parser.add_argument("--ready", type=Path, default=READY_FILE)
     parser.add_argument("--size", type=int, default=112)
     parser.add_argument("--opacity", type=float, default=0.88)
     parser.add_argument("--console", action="store_true", help=cli_text["console"])
@@ -2258,6 +2280,8 @@ def main() -> int:
     )
     if args.console:
         app.set_mode("console")
+    app.root.update_idletasks()
+    write_ready(args.agent_id, args.visible, args.signal, args.ready)
     app.run()
     return 0
 

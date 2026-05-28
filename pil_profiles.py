@@ -7,6 +7,7 @@ import json
 import re
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -39,6 +40,7 @@ class ProfilePaths:
     signal: Path
     runtime_mode: Path
     orb_session: Path
+    orb_ready: Path
     meta: Path
 
 
@@ -78,6 +80,7 @@ def profile_paths(slug: str) -> ProfilePaths:
         signal=state_dir / "orb_signal.json",
         runtime_mode=state_dir / "runtime_mode.json",
         orb_session=state_dir / "orb_session.json",
+        orb_ready=state_dir / "orb_ready.json",
         meta=root / "profile.json",
     )
 
@@ -147,13 +150,31 @@ def deterministic_position(slug: str) -> tuple[int, int]:
     return 80 + seed % 420, 80 + (seed // 17) % 280
 
 
-def record_orb_session(paths: ProfilePaths, launch_kind: str = "personality_orb") -> dict[str, Any]:
+def record_orb_session(paths: ProfilePaths, launch_kind: str = "personality_orb", ready_receipt: dict[str, Any] | None = None) -> dict[str, Any]:
     state = pkm.load_state(paths.state)
     visible = json.loads(paths.visible.read_text(encoding="utf-8-sig"))
-    session = pkm.create_orb_launch_session(state, paths.slug, visible, launch_kind=launch_kind)
+    session = pkm.create_orb_launch_session(state, paths.slug, visible, launch_kind=launch_kind, ready_receipt=ready_receipt)
     paths.orb_session.write_text(json.dumps(session, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     pkm.save_state(paths.state, state)
     return session
+
+
+def wait_for_orb_ready(paths: ProfilePaths, timeout_seconds: float = 8.0) -> dict[str, Any]:
+    deadline = time.time() + timeout_seconds
+    while time.time() < deadline:
+        if paths.orb_ready.exists():
+            try:
+                receipt = json.loads(paths.orb_ready.read_text(encoding="utf-8-sig"))
+            except Exception:
+                receipt = {}
+            if (
+                receipt.get("schema") == "pdk.desktop_orb_ready.v1"
+                and str(receipt.get("agent_id") or "") == paths.slug
+                and Path(str(receipt.get("visible") or "")).resolve() == paths.visible.resolve()
+            ):
+                return receipt
+        time.sleep(0.20)
+    raise RuntimeError("personality orb did not report ready; entry proof was not generated")
 
 
 def launch_profile(paths: ProfilePaths, compact: bool = True, x: int | None = None, y: int | None = None) -> None:
@@ -175,6 +196,8 @@ def launch_profile(paths: ProfilePaths, compact: bool = True, x: int | None = No
         str(paths.visible),
         "-Signal",
         str(paths.signal),
+        "-Ready",
+        str(paths.orb_ready),
         "-X",
         str(x),
         "-Y",
@@ -182,8 +205,13 @@ def launch_profile(paths: ProfilePaths, compact: bool = True, x: int | None = No
     ]
     if compact:
         args.append("-Compact")
-    record_orb_session(paths, launch_kind="compact_personality_orb" if compact else "personality_observatory")
+    if paths.orb_ready.exists():
+        paths.orb_ready.unlink()
+    if paths.orb_session.exists():
+        paths.orb_session.unlink()
     subprocess.run(args, cwd=str(ROOT), check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    ready_receipt = wait_for_orb_ready(paths)
+    record_orb_session(paths, launch_kind="compact_personality_orb" if compact else "personality_observatory", ready_receipt=ready_receipt)
 
 
 def sign_entry_challenge(profile: str, challenge_json: Path) -> dict[str, Any]:

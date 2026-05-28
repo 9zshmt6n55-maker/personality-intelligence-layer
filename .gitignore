@@ -22,6 +22,7 @@ imports/feishu/raw/
 imports/feishu/processed/
 imports/feishu/reports/
 backups/
+tmp/
 
 # Generated previews, screenshots, and logs
 *.png
@@ -33,6 +34,7 @@ copy_new_codex_test.cmd
 *.jpeg
 *.gif
 *.log
+*.tmp
 server.out.log
 server.err.log
 

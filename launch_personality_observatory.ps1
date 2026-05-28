@@ -3,6 +3,7 @@ param(
     [string]$AgentId = "default",
     [string]$Visible = "",
     [string]$Signal = "",
+    [string]$Ready = "",
     [int]$X = -1,
     [int]$Y = -1,
     [switch]$Compact
@@ -18,6 +19,9 @@ if ($Visible -eq "") {
 }
 if ($Signal -eq "") {
     $Signal = Join-Path $Root "state\orb_signal.json"
+}
+if ($Ready -eq "") {
+    $Ready = Join-Path $Root "state\orb_ready.json"
 }
 if ($AgentId -eq "") {
     $AgentId = "default"
@@ -46,7 +50,8 @@ $orbArgs = @(
     "--size", "112",
     "--opacity", "0.94",
     "--visible", $Visible,
-    "--signal", $Signal
+    "--signal", $Signal,
+    "--ready", $Ready
 )
 
 if (-not $Compact) {

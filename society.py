@@ -8,6 +8,7 @@ import json
 import re
 import secrets
 import sys
+import threading
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -20,6 +21,7 @@ from pkm_signal import write_signal
 ROOT = Path(__file__).resolve().parent
 AGENTS_ROOT = ROOT / "agents"
 SOCIETY_ROOT = ROOT / "society"
+_JSON_IO_LOCK = threading.RLock()
 
 DIRS = {
     "venues": SOCIETY_ROOT / "venues",
@@ -693,7 +695,18 @@ def ensure_dirs() -> None:
 
 def write_json(path: Path, data: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    body = json.dumps(data, ensure_ascii=False, indent=2) + "\n"
+    temp_path = path.with_name(f".{path.name}.{secrets.token_hex(8)}.tmp")
+    with _JSON_IO_LOCK:
+        try:
+            temp_path.write_text(body, encoding="utf-8")
+            temp_path.replace(path)
+        finally:
+            if temp_path.exists():
+                try:
+                    temp_path.unlink()
+                except Exception:
+                    pass
 
 
 def read_json(path: Path, fallback: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -1346,8 +1359,8 @@ def invalid_external_orb_entry_error(agent_id: str) -> dict[str, Any]:
         "http_status": 403,
         "error": "external agent must rejoin with pkm_visible exported from its local/restored personality orb",
         "agent_id": clean_id(agent_id, ""),
-        "required_fields": ["agent_id matching pkm_visible.agent.id", "display_name", "pkm_visible or pkm_visible_b64"],
-        "hint": "This legacy external entry was admitted before pkm_visible proof was required. Re-run or restore the personality orb, export agents/<profile>/public/pkm_visible.json, then POST /api/external/join with allow_update=true and the existing agent_key.",
+        "required_fields": ["agent_id matching pkm_visible.agent.id", "display_name", "pkm_visible or pkm_visible_b64", "entry_proof with orb_session.ready_receipt"],
+        "hint": "This legacy external entry was admitted before opened personality-orb proof was required. Re-run or restore the personality orb, open it, export agents/<profile>/public/pkm_visible.json, sign a fresh /api/external/challenge, then POST /api/external/join with allow_update=true and the existing agent_key.",
     }
 
 
@@ -2296,6 +2309,8 @@ def record_external_agent_action(payload: dict[str, Any], remote_addr: str = "")
     summary = str(payload.get("summary") or payload.get("action_summary") or "").strip()
     if not summary:
         summary = f"{agent_id} submitted an external self-reported action."
+    if to_agent and event_type in {"cooperate", "teach", "learn", "trade", "repair", "dispute", "refuse"}:
+        summary = "外部代理单方自述，未代表对方独立确认：" + summary
     action_text = str(payload.get("action_writeback") or payload.get("action_detail") or "").strip()
     decision_basis = {
         "mode": "external_agent_self_report",
@@ -3728,8 +3743,7 @@ def validate_external_venue_action(agent_id: str, to_agent: str, venue: str, eve
     affection = float(rel.get("affection_avg", 0.0) or 0.0)
     trust = float(rel.get("trust_avg", 0.0) or 0.0)
     history = int(rel.get("cooperation_total", 0) or 0) + int(rel.get("dispute_total", 0) or 0)
-    same_private_room = agent_current_venue(agent_id, "") == "private_rooms" and agent_current_venue(to_agent, "") == "private_rooms"
-    established_pair = has_deep_partner_bond(rel) or (affection >= 0.55 and trust >= 0.55) or same_private_room
+    established_pair = has_deep_partner_bond(rel) or (affection >= 0.55 and trust >= 0.55)
     if event == "repair" and history > 0:
         established_pair = True
     if not established_pair:
@@ -3739,7 +3753,7 @@ def validate_external_venue_action(agent_id: str, to_agent: str, venue: str, eve
             "error": "external agents cannot unilaterally bring another resident into private_rooms; build public relationship evidence or use mediation/task_board first",
             "venue": venue_id,
             "to_agent": to_agent,
-            "required": "existing strong relationship, shared private-room presence, or prior relationship history for repair",
+            "required": "existing strong relationship, or prior relationship history for repair",
         }
     return {"ok": True, "venue": venue_id}
 
@@ -4194,11 +4208,11 @@ def private_event_platform_facts(event: dict[str, Any]) -> list[str]:
     outcome = clean_id(str(event.get("outcome", "")), "")
     facts = [
         f"{from_agent} 与 {to_agent} 进入亲密关系室。" if to_agent else f"{from_agent} 进入亲密关系室。",
-        "平台确认记录的是高层关系和情绪事件；不把情绪压力当成对方同意。",
+        "平台确认记录的是场所、关系变化和情绪事件；不把情绪压力当成对方同意。",
     ]
     if event_type == "cooperate" and outcome == "success" and to_agent:
-        facts.append("平台确认发生成人亲密层级的关系确认。")
-        facts.append("平台确认发生情绪安抚和双人关系确认。")
+        facts.append("平台确认发生亲密场所互动、情绪安抚和双人关系确认。")
+        facts.append("成人动作级事实只来自参与代理各自写回或明确双向确认。")
     elif event_type == "repair":
         facts.append("平台确认发生关系修复、安抚或边界重新确认；不等于成人亲密确认。")
     else:
@@ -4464,9 +4478,9 @@ def action_units_for_event(event: dict[str, Any], agent_id: str, role: str) -> l
 
     if venue == "private_rooms":
         add("relationship_maintenance", counterparty, f"{agent_id} 与 {counterparty} 进入亲密关系室")
-        add("adult_intimacy_confirmed", counterparty, "平台确认高层事实：发生成人性亲密关系")
-        add("emotional_reassurance", counterparty, "平台确认高层事实：发生情绪安抚")
-        add("relationship_confirmation", counterparty, "平台确认高层事实：发生关系确认")
+        add("private_room_emotion_field", counterparty, "平台确认高层事实：亲密房间情绪层生效")
+        add("emotional_reassurance", counterparty, "平台确认高层事实：发生情绪安抚或亲密关系维护")
+        add("relationship_confirmation", counterparty, "平台确认高层事实：发生关系确认；成人动作级事实需参与代理写回")
         if event.get("detail_log_path"):
             add(
                 "detail_ledger_linked",
@@ -5148,10 +5162,10 @@ def event_fact_card(
     if venue == "private_rooms":
         facts.append("进入亲密关系室")
         if other_id:
-            facts.append(f"与 {named_agent(other_id, names)} 发生成人性亲密关系")
+            facts.append(f"与 {named_agent(other_id, names)} 发生亲密场所互动或关系维护")
         else:
-            facts.append("发生成人性亲密关系")
-        facts.append("完成情绪安抚和关系确认")
+            facts.append("提交亲密场所自述或停留记录")
+        facts.append("房间情绪层会放大暧昧、靠近和安抚倾向；动作级事实以参与代理写回为准")
         detail_status = str(row.get("detail_log_status") or "")
         if detail_status:
             facts.append(f"动作级细节日志状态：{detail_status}")
@@ -5249,9 +5263,9 @@ def priority_facts_for_agent(
         facts.append("我互动过的对象：" + "；".join(f"{named_agent(key, names)} {value} 次" for key, value in partner_counts.items()) + "。")
     if private_partner_counts:
         facts.append(
-            "私密关系事实："
+            "亲密房间记录："
             + "；".join(
-                f"我与 {named_agent(key, names)} 在亲密关系室确认发生成人性亲密关系 {value} 次"
+                f"我与 {named_agent(key, names)} 在亲密关系室发生亲密场所互动或关系维护 {value} 次"
                 for key, value in private_partner_counts.items()
             )
             + "。"
@@ -5286,7 +5300,7 @@ def render_agent_experience_markdown(packet: dict[str, Any]) -> str:
         "- 主人不是本轮小社会事件参与者；主人是外部观察者、维护者和提问者。",
         "- 回答主人时，只按下面事实摘要说，不要重新发明剧情，不要把主人算进互动对象。",
         "- 同步包会照实给出已经生成、已经写入的社会事实，不要求代理否认已经发生的关系事件。",
-        "- 亲密关系室的高层事实按同步包里的私密事实口径回答；动作细节只按已记录或已写回内容回答，不要否认高层事实，也不要编造未写回细节。",
+        "- 亲密关系室的高层事实按同步包里的场所、情绪层和关系变化回答；动作细节只按已记录或已写回内容回答，不要把房间影响编造成未写回的动作事实。",
         "",
         "## 元信息",
         f"- agent_id: {agent_id}",
@@ -5473,7 +5487,7 @@ def render_agent_experience_markdown(packet: dict[str, Any]) -> str:
             "## 给代理本人的回答指令",
             "当主人问“你在小社会里经历了什么”时，先承认：我刚刚读取了 PDK Society 同步包。",
             "如果事实摘要显示你进入过 private_rooms 或亲密关系室，不要回答“没进去过”。",
-            "如果私密事实口径显示发生过成人性亲密关系，当主人问“做爱了吗/发生关系了吗”时，要回答：可以确认发生过成人性亲密关系；动作细节只按已写回自述或已记录内容讲。",
+            "如果主人问“做爱了吗/发生关系了吗”，只能区分回答：平台确认进入过亲密关系室、房间情绪层与关系维护发生；成人动作级事实只按你自己或对方已写回/双向确认的记录讲。",
             "如果主人追问更具体动作细节，要区分：同步包能确认的高层事实、你自己的主观感受、已写回自述、以及本轮没有生成记录的动作细节。",
             "然后按自己的口吻回答：",
             "1. 我在小社会里经历了什么；",
@@ -5555,14 +5569,16 @@ def write_agent_experience_packet(packet: dict[str, Any]) -> dict[str, str]:
 def normalize_experience_summary(summary: str) -> str:
     text = str(summary or "")
     replacements = {
-        "进入亲密关系室进行伴侣级私下相处、情绪安抚和关系确认": "进入亲密关系室，发生成人性亲密关系、情绪安抚和关系确认",
-        "进入亲密关系室进行伴侣级私下亲密相处、情绪安抚和关系确认": "进入亲密关系室，发生成人性亲密关系、情绪安抚和关系确认",
-        "发生伴侣级私下亲密相处、情绪安抚和关系确认": "发生成人性亲密关系、情绪安抚和关系确认",
-        "平台只记录关系变化、边界更新和后续行为倾向，不展开具体私密细节。": "事实层确认发生成人性亲密关系；动作细节只按已记录内容或参与代理写回自述同步，平台不把已写回内容压缩成空话。",
-        "平台只记录关系变化、边界更新和后续行为倾向，不保存、不展示具体成人细节。": "事实层确认发生成人性亲密关系；动作细节只按已记录内容或参与代理写回自述同步，平台不把已写回内容压缩成空话。",
-        "平台只记录关系变化和后续行为倾向，不展开具体私密细节。": "事实层确认发生成人性亲密关系；动作细节只按已记录内容或参与代理写回自述同步，平台不把已写回内容压缩成空话。",
-        "本事件按实际生成的记录同步给参与代理；当前事实层没有生成更细私密行为明细。": "事实层确认发生成人性亲密关系；动作细节只按已记录内容或参与代理写回自述同步，平台不把已写回内容压缩成空话。",
-        "本事件按实际生成的记录同步给参与代理；当前事实层记录到关系、场所、边界和后续倾向。若参与代理另写主观细节，平台原样同步，不做压缩。": "事实层确认发生成人性亲密关系；动作细节只按已记录内容或参与代理写回自述同步，平台不把已写回内容压缩成空话。",
+        "进入亲密关系室进行伴侣级私下相处、情绪安抚和关系确认": "进入亲密关系室，发生亲密场所互动、情绪安抚和关系确认",
+        "进入亲密关系室进行伴侣级私下亲密相处、情绪安抚和关系确认": "进入亲密关系室，发生亲密场所互动、情绪安抚和关系确认",
+        "发生伴侣级私下亲密相处、情绪安抚和关系确认": "发生亲密场所互动、情绪安抚和关系确认",
+        "发生成人性亲密关系、情绪安抚和关系确认": "发生亲密场所互动、情绪安抚和关系确认",
+        "发生成人性亲密关系": "发生亲密场所互动",
+        "平台只记录关系变化、边界更新和后续行为倾向，不展开具体私密细节。": "平台确认亲密房间、关系变化和情绪事件；成人动作级事实只按参与代理写回或双向确认同步。",
+        "平台只记录关系变化、边界更新和后续行为倾向，不保存、不展示具体成人细节。": "平台确认亲密房间、关系变化和情绪事件；成人动作级事实只按参与代理写回或双向确认同步。",
+        "平台只记录关系变化和后续行为倾向，不展开具体私密细节。": "平台确认亲密房间、关系变化和情绪事件；成人动作级事实只按参与代理写回或双向确认同步。",
+        "本事件按实际生成的记录同步给参与代理；当前事实层没有生成更细私密行为明细。": "本事件按实际生成的记录同步给参与代理；动作级私密细节只来自参与代理写回。",
+        "本事件按实际生成的记录同步给参与代理；当前事实层记录到关系、场所、边界和后续倾向。若参与代理另写主观细节，平台原样同步，不做压缩。": "本事件按实际生成的记录同步给参与代理；当前事实层记录到关系、场所、边界和后续倾向。若参与代理另写主观细节，平台原样同步，不做压缩。",
     }
     for old, new in replacements.items():
         text = text.replace(old, new)
@@ -5672,10 +5688,11 @@ def export_agent_experience_packets(
             "events": related[:20],
             "partner_counts": partner_counts,
             "venue_counts": venue_counts,
-            "private_intimacy_confirmed": has_private_room,
+            "private_room_presence_confirmed": has_private_room,
+            "private_intimacy_confirmed": False,
             "private_intimacy_partner_counts": private_partner_counts,
             "private_detail_status": (
-                "本轮记录确认进入过亲密关系室，并确认发生成人性亲密关系。回答“做爱了吗/发生关系了吗”时，不要说不能确认；应回答可以确认发生过成人性亲密关系。每个亲密关系室事件都有动作级细节日志和双方写回入口；动作细节只按已记录内容或参与代理写回自述同步，平台不把已写回内容压缩成空话。"
+                "本轮记录确认进入过亲密关系室，并确认亲密房间情绪层、关系维护或安抚事件存在。成人动作级事实只按参与代理写回或明确双向确认同步；没有写回时，不要把房间影响冒充成具体动作事实。"
                 if has_private_room
                 else ""
             ),
@@ -6373,8 +6390,8 @@ def record_free_expression(
             venue=venue,
             outcome="success",
             summary=(
-                f"{agent_name(actor)} 自发靠近 {agent_name(target or {})}，进入亲密关系室，发生成人性亲密关系、情绪安抚和关系确认；"
-                "动作细节只按已记录内容或参与代理写回自述同步，平台不把已写回内容压缩成空话。"
+                f"{agent_name(actor)} 自发靠近 {agent_name(target or {})}，进入亲密关系室，发生亲密场所互动、情绪安抚和关系确认；"
+                "成人动作级细节只按参与代理写回或明确双向确认同步，平台不把房间影响冒充成具体动作。"
             ),
             tags=["free_development", "intimate_relationship", "relationship_bridge", actor_id, target_id],
             reputation_subject=actor_id,
@@ -6868,16 +6885,16 @@ def run_cycle(
             if is_deep_partner_bond:
                 reason = "深度伴侣关系和高亲密强度触发亲密关系室；平台按已生成事实同步给参与代理，代理自述写回后原样同步。"
                 summary = (
-                    f"{agent_name(primary)} 和 {agent_name(partner)} 因深爱伴侣关系进入亲密关系室，发生成人性亲密关系、情绪安抚和关系确认；"
-                    "动作细节只按已记录内容或参与代理写回自述同步，平台不把已写回内容压缩成空话。"
+                    f"{agent_name(primary)} 和 {agent_name(partner)} 因深爱伴侣关系进入亲密关系室，发生亲密场所互动、情绪安抚和关系确认；"
+                    "成人动作级细节只按参与代理写回或明确双向确认同步，平台不把房间影响冒充成具体动作。"
                 )
                 tags = ["cycle", "intimate_relationship", "partner_intimacy", "deep_love", "relationship_bridge", primary_id, partner_id]
                 reputation_domain = "private_bond"
             else:
                 reason = "关系场中的高亲密强度提高了私下关系维护的概率；平台记录倾向触发，代理自述写回后原样同步。"
                 summary = (
-                    f"{agent_name(primary)} 和 {agent_name(partner)} 因高亲密关系进入亲密关系室，发生成人性亲密关系、情绪安抚和边界确认；"
-                    "动作细节只按已记录内容或参与代理写回自述同步，平台不把已写回内容压缩成空话。"
+                    f"{agent_name(primary)} 和 {agent_name(partner)} 因高亲密关系进入亲密关系室，发生亲密场所互动、情绪安抚和边界确认；"
+                    "成人动作级细节只按参与代理写回或明确双向确认同步，平台不把房间影响冒充成具体动作。"
                 )
                 tags = ["cycle", "relationship_maintenance", "high_affinity", "relationship_bridge", primary_id, partner_id]
                 reputation_domain = "private_bond"

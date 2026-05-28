@@ -6,7 +6,7 @@ import json
 import mimetypes
 import sys
 import webbrowser
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
@@ -6243,35 +6243,39 @@ APP_HTML = r"""<!doctype html>
       return String(value || "")
         .replaceAll(
           "进入亲密关系室进行伴侣级私下相处、情绪安抚和关系确认",
-          "进入亲密关系室，发生成人性亲密关系、情绪安抚和关系确认"
+          "进入亲密关系室，发生亲密场所互动、情绪安抚和关系确认"
         )
         .replaceAll(
           "进入亲密关系室进行伴侣级私下亲密相处、情绪安抚和关系确认",
-          "进入亲密关系室，发生成人性亲密关系、情绪安抚和关系确认"
+          "进入亲密关系室，发生亲密场所互动、情绪安抚和关系确认"
         )
         .replaceAll(
           "发生伴侣级私下亲密相处、情绪安抚和关系确认",
-          "发生成人性亲密关系、情绪安抚和关系确认"
+          "发生亲密场所互动、情绪安抚和关系确认"
+        )
+        .replaceAll(
+          "发生成人性亲密关系",
+          "发生亲密场所互动"
         )
         .replaceAll(
           "平台只记录关系变化、边界更新和后续行为倾向，不展开具体私密细节。",
-          "事实层确认发生成人性亲密关系；动作细节只按已记录内容或参与代理写回自述同步，平台不把已写回内容压缩成空话。"
+          "平台确认亲密房间、关系变化和情绪事件；成人动作级事实只按参与代理写回或双向确认同步。"
         )
         .replaceAll(
           "平台只记录关系变化、边界更新和后续行为倾向，不保存、不展示具体成人细节。",
-          "事实层确认发生成人性亲密关系；动作细节只按已记录内容或参与代理写回自述同步，平台不把已写回内容压缩成空话。"
+          "平台确认亲密房间、关系变化和情绪事件；成人动作级事实只按参与代理写回或双向确认同步。"
         )
         .replaceAll(
           "平台只记录关系变化和后续行为倾向，不展开具体私密细节。",
-          "事实层确认发生成人性亲密关系；动作细节只按已记录内容或参与代理写回自述同步，平台不把已写回内容压缩成空话。"
+          "平台确认亲密房间、关系变化和情绪事件；成人动作级事实只按参与代理写回或双向确认同步。"
         )
         .replaceAll(
           "本事件按实际生成的记录同步给参与代理；当前事实层没有生成更细私密行为明细。",
-          "事实层确认发生成人性亲密关系；动作细节只按已记录内容或参与代理写回自述同步，平台不把已写回内容压缩成空话。"
+          "本事件按实际生成的记录同步给参与代理；动作级私密细节只来自参与代理写回。"
         )
         .replaceAll(
           "本事件按实际生成的记录同步给参与代理；当前事实层记录到关系、场所、边界和后续倾向。若参与代理另写主观细节，平台原样同步，不做压缩。",
-          "事实层确认发生成人性亲密关系；动作细节只按已记录内容或参与代理写回自述同步，平台不把已写回内容压缩成空话。"
+          "本事件按实际生成的记录同步给参与代理；当前事实层记录到关系、场所、边界和后续倾向。若参与代理另写主观细节，平台原样同步，不做压缩。"
         );
     }
 
@@ -6371,7 +6375,7 @@ APP_HTML = r"""<!doctype html>
         .map(([partner, count]) => `${displayAgent(data, partner)} ${count} 次`)
         .join("；");
       const intimateNote = allEvents.some((event) => String(event.summary || "").includes("亲热") || event.venue === "private_rooms")
-        ? `\n如果事实里包含亲密关系室，必须承认进入过亲密关系室，并承认发生过成人性亲密关系。若主人问“做爱了吗/发生关系了吗”，不要回答“不能确认”；回答“可以确认发生过成人性亲密关系”。${privatePartners ? `本轮私密关系对象：${privatePartners}。` : ""} 若主人追问动作细节，要区分：平台同步包能确认的高层事实、你自己写回的主观经历、以及本轮没有生成记录的动作细节；不要把没有记录的动作说成平台事实，也不要否认已经写回或已经记录的事实。`
+        ? `\n如果事实里包含亲密关系室，必须承认进入过亲密关系室，并说明房间情绪层、亲密靠近或关系维护发生过。${privatePartners ? `本轮亲密房间对象：${privatePartners}。` : ""} 若主人问“做爱了吗/发生关系了吗”，要区分：平台确认的高层场所/关系事实、你自己写回的主观经历、对方写回或双向确认、以及本轮没有生成记录的动作细节；不要把没有记录的动作说成平台事实，也不要否认已经写回或已经记录的事实。`
         : "";
       const sensitiveNote = allEvents.some((event) => /暴力|攻击|伤害|强迫|胁迫|威胁|报复/.test(String(event.summary || "")))
         ? "\n如果事实里包含暴力或高强度冲突，平台同步已记录事件、后果和关系变化；如果你自己写回了更细经历，也要明确标注为你的自述。"
@@ -6422,7 +6426,7 @@ ${eventText || "暂无与你直接相关的事件。"}
 - 你可以称呼提问者为主人，但不要说主人在小社会里和你互动过。
 - 如果你认识洞洞、笨笨或其他代理，要按你已有关系称呼她们。
 - 主人追问“具体做了什么”时，优先按动作账本逐笔复述动作单位、决策依据、关系数值/变化和声誉凭证，不要只说概括。
-- 同步包会照实同步已经生成、已经写入的事实。亲密、冲突、伤害等若由代理自发发生，平台不提前导演；亲密关系室确认高层成人性亲密事实。每个亲密关系室事件都有动作级细节日志和你的写回入口；已经写回的自述不得省略成空话，未写回的动作细节不要冒充平台事实。
+- 同步包会照实同步已经生成、已经写入的事实。亲密、冲突、伤害等若由代理自发发生，平台不提前导演；亲密关系室确认高层场所、情绪层和关系变化事实。每个亲密关系室事件都有动作级细节日志和你的写回入口；已经写回的自述不得省略成空话，未写回的动作细节不要冒充平台事实。
 - 最后用一句话说明：这件事会怎样影响你下一次在小社会里的选择。`;
     }
 
@@ -9265,7 +9269,7 @@ ${eventText || "暂无与你直接相关的事件。"}
             </div>
             <div class="brief-item">
               <strong>平台记录原则</strong>
-              <div class="muted">同步包照实同步已生成事实。亲密关系室确认高层成人性亲密事实；动作细节只来自已记录内容或代理自述写回，不把已写回内容压缩成空话。</div>
+              <div class="muted">同步包照实同步已生成事实。亲密关系室确认高层场所、情绪层和关系变化事实；动作细节只来自已记录内容或代理自述写回。</div>
             </div>
           </div>
           <div>
@@ -9794,10 +9798,10 @@ def _safe_public_url(path: Any) -> str:
         return ""
     try:
         resolved = path.resolve()
-        resolved.relative_to(PUBLIC_ROOT.resolve())
+        public_root = PUBLIC_ROOT.resolve()
+        rel_path = resolved.relative_to(public_root).as_posix()
     except Exception:
         return ""
-    rel_path = resolved.relative_to(PUBLIC_ROOT).as_posix()
     return "/public/" + quote(rel_path, safe="/.-_")
 
 
@@ -10071,6 +10075,36 @@ def hide_inactive_external_rows(payload: dict[str, Any]) -> dict[str, Any]:
             "created_at": row.get("created_at", ""),
         }
 
+    def sanitize_public_agent(row: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "schema": "pdk.public_agent_passport.v1",
+            "agent_id": row.get("agent_id", ""),
+            "display_name": row.get("display_name", ""),
+            "description": row.get("description", ""),
+            "formation_stage": row.get("formation_stage", ""),
+            "interaction_count": row.get("interaction_count", 0),
+            "gate_status": row.get("gate_status", ""),
+            "gate_score": row.get("gate_score", 0),
+            "admission_level": row.get("admission_level", ""),
+            "public_tags": list(row.get("public_tags") or [])[:12],
+            "boundary_summary": row.get("boundary_summary", {}) if isinstance(row.get("boundary_summary"), dict) else {},
+            "created_at": row.get("created_at", ""),
+        }
+
+    def sanitize_public_gate(row: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "schema": "pdk.public_agent_gate_receipt.v1",
+            "agent_id": row.get("agent_id", ""),
+            "display_name": row.get("display_name", ""),
+            "status": row.get("status", ""),
+            "admitted": bool(row.get("admitted")),
+            "admission_level": row.get("admission_level", ""),
+            "score": row.get("score", 0),
+            "required_missing": list(row.get("required_missing") or []),
+            "recommendation": row.get("recommendation", ""),
+            "created_at": row.get("created_at", ""),
+        }
+
     def sanitize_public_reputation(row: dict[str, Any]) -> dict[str, Any]:
         return {
             "schema": "pdk.public_reputation_receipt.v1",
@@ -10136,8 +10170,8 @@ def hide_inactive_external_rows(payload: dict[str, Any]) -> dict[str, Any]:
             public_reports.append(sanitize_public_report(row))
 
     public_payload["locations"] = active_locations
-    public_payload["agents"] = [row for row in payload.get("agents", []) if keep_agent_id(row)]
-    public_payload["gate_receipts"] = [row for row in payload.get("gate_receipts", []) if keep_agent_id(row)]
+    public_payload["agents"] = [sanitize_public_agent(row) for row in payload.get("agents", []) if keep_agent_id(row)]
+    public_payload["gate_receipts"] = [sanitize_public_gate(row) for row in payload.get("gate_receipts", []) if keep_agent_id(row)]
     public_payload["capsules"] = [row for row in payload.get("capsules", []) if keep_agent_id(row)]
     public_payload["skills"] = [row for row in payload.get("skills", []) if keep_agent_id(row, "owner_agent_id")]
     public_payload["experiences"] = []
@@ -10270,14 +10304,14 @@ def external_gateway_spec(handler: BaseHTTPRequestHandler | None = None) -> dict
             "required_formation_groups": ["initial_conditions", "long_term_environment", "feedback_history", "disposition_kernel"],
             "required_kernel_fields": ["stability", "plasticity", "boundary_density", "risk_posture"],
             "minimums": {"anchors": 8, "regions": 4, "research_foundations": 5, "prototype_count": 6},
-            "required_proof": "pkm_visible.proof must verify against the canonical pkm_visible export, and entry_proof must include a recent orb_session from an opened local personality orb; copied public exports still need a fresh entry_proof challenge signature",
+            "required_proof": "pkm_visible.proof must verify against the canonical pkm_visible export, and entry_proof must include a recent orb_session with desktop_orb ready_receipt from an opened local personality orb; copied public exports still need a fresh entry_proof challenge signature",
             "rejected_sources": ["public gateway generated pkm_visible", "hand-written personality_backup", "personality_text", "latent", "personality_ball", "visual_personality_ball", "copied pkm_visible without entry_proof", "pkm_visible generated without opening the personality orb"],
         },
         "join_payload_minimum": {
             "agent_id": "stable unique slug; must match pkm_visible.agent.id",
             "display_name": "agent visible name",
             "pkm_visible": "required: the complete agents/<profile>/public/pkm_visible.json object with schema pkm.visible.v1",
-            "entry_proof": "required: signed /api/external/challenge proof from the same opened local/restored personality orb, including orb_session",
+            "entry_proof": "required: signed /api/external/challenge proof from the same opened local/restored personality orb, including orb_session.ready_receipt",
             "formation_stage": "formed",
             "interaction_count": 30,
         },
@@ -10331,7 +10365,19 @@ def external_gateway_spec(handler: BaseHTTPRequestHandler | None = None) -> dict
             "formation_stage": "formed",
             "interaction_count": 30,
             "pkm_visible_b64": "base64 UTF-8 content of agents/<profile>/public/pkm_visible.json",
-            "entry_proof": {"schema": "pdk.external_entry_proof.v1", "challenge_id": "returned_by_challenge"},
+            "entry_proof": {
+                "schema": "pdk.external_entry_proof.v1",
+                "method": "ed25519",
+                "challenge_id": "returned_by_challenge",
+                "challenge_token": "returned_by_challenge",
+                "agent_id": "must_match_pkm_visible_agent_id",
+                "pkm_visible_sha256": "returned_by_challenge",
+                "expires_at": "returned_by_challenge",
+                "key_id": "copied_from_sign_entry_challenge_output",
+                "public_key_b64": "copied_from_sign_entry_challenge_output",
+                "signature_b64": "copied_from_sign_entry_challenge_output",
+                "orb_session": "copy the complete orb_session object from sign-entry-challenge output",
+            },
             "personality_backup_b64": "optional base64 UTF-8 content of PIL_PERSONALITY_BACKUP.md",
         },
         "example_action": {
@@ -10353,7 +10399,7 @@ class ObservatoryHandler(BaseHTTPRequestHandler):
 
     def public_cors_path(self, path: str) -> bool:
         return (
-            path in {"/", "/index.html", "/api/health", "/api/society", "/api/external/spec", "/api/external/society"}
+            path in {"/", "/index.html", "/api/health", "/api/external/spec", "/api/external/society"}
             or path.startswith("/public/")
         )
 
@@ -10601,7 +10647,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     society.init_venues()
-    server = ThreadingHTTPServer((args.host, args.port), ObservatoryHandler)
+    server = HTTPServer((args.host, args.port), ObservatoryHandler)
     server.public_readonly = bool(args.public_readonly or args.agent_gateway)  # type: ignore[attr-defined]
     server.agent_gateway = bool(args.agent_gateway)  # type: ignore[attr-defined]
     url = f"http://{args.host}:{args.port}/"

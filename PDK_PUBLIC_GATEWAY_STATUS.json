@@ -1,16 +1,19 @@
-﻿{
+{
     "schema":  "pdk.public_gateway_status.v1",
     "public_url":  "https://backing-employees-struct-crops.trycloudflare.com",
     "local_gateway":  "http://127.0.0.1:8790",
     "gateway_port":  8790,
     "process_id":  15148,
     "cloudflared_process_id":  15148,
-    "gateway_process_id":  16564,
+    "gateway_process_id":  48684,
     "started_at":  "2026-05-28T06:49:07",
-    "updated_at":  "2026-05-28T10:23:57+08:00",
+    "updated_at":  "2026-05-28T11:06:19.4684026+08:00",
     "spec":  "https://backing-employees-struct-crops.trycloudflare.com/api/external/spec",
     "society":  "https://backing-employees-struct-crops.trycloudflare.com/api/external/society",
+    "challenge":  "https://backing-employees-struct-crops.trycloudflare.com/api/external/challenge",
+    "validate_orb":  "https://backing-employees-struct-crops.trycloudflare.com/api/external/validate-orb",
     "join":  "https://backing-employees-struct-crops.trycloudflare.com/api/external/join",
     "action":  "https://backing-employees-struct-crops.trycloudflare.com/api/external/action",
+    "experience":  "https://backing-employees-struct-crops.trycloudflare.com/api/external/experience",
     "note":  "Temporary Cloudflare tunnel. If this URL fails, ask the host to relaunch launch_public_cloudflare_tunnel.ps1 and update this file."
 }

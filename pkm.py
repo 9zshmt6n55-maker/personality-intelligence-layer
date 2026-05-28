@@ -1275,6 +1275,7 @@ def orb_launch_session_message(session: dict[str, Any]) -> bytes:
         "visible_sha256": str(session.get("visible_sha256") or ""),
         "launch_kind": str(session.get("launch_kind") or ""),
         "launched_at": str(session.get("launched_at") or ""),
+        "ready_receipt_sha256": str(session.get("ready_receipt_sha256") or ""),
     }
     return b"pdk.orb.launch.session.v1\n" + json.dumps(
         body, ensure_ascii=False, sort_keys=True, separators=(",", ":")
@@ -1286,6 +1287,7 @@ def create_orb_launch_session(
     profile: str,
     visible: dict[str, Any],
     launch_kind: str = "personality_orb",
+    ready_receipt: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     try:
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -1304,6 +1306,11 @@ def create_orb_launch_session(
         "key_id": signing["key_id"],
         "public_key_b64": signing["public_key_b64"],
     }
+    if ready_receipt:
+        session["ready_receipt"] = ready_receipt
+        session["ready_receipt_sha256"] = hashlib.sha256(
+            json.dumps(ready_receipt, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
     private_key = Ed25519PrivateKey.from_private_bytes(_b64decode(signing["private_key_b64"]))
     session["signature_b64"] = _b64encode(private_key.sign(orb_launch_session_message(session)))
     return session
@@ -1322,6 +1329,19 @@ def verify_orb_launch_session(session: dict[str, Any], visible: dict[str, Any], 
         errors.append("entry_proof.orb_session.public_key_b64 must match pkm_visible.proof.public_key_b64")
     if str(session.get("visible_sha256") or "") != visible_export_canonical_sha256(visible):
         errors.append("entry_proof.orb_session.visible_sha256 does not match the submitted pkm_visible")
+    ready_receipt = session.get("ready_receipt") if isinstance(session.get("ready_receipt"), dict) else {}
+    if not ready_receipt:
+        errors.append("entry_proof.orb_session.ready_receipt is required; open the desktop personality orb before signing entry")
+    else:
+        if ready_receipt.get("schema") != "pdk.desktop_orb_ready.v1":
+            errors.append("entry_proof.orb_session.ready_receipt.schema must be pdk.desktop_orb_ready.v1")
+        if str(ready_receipt.get("agent_id") or "") != str(session.get("agent_id") or ""):
+            errors.append("entry_proof.orb_session.ready_receipt.agent_id must match orb_session.agent_id")
+        expected_ready_sha = hashlib.sha256(
+            json.dumps(ready_receipt, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
+        if str(session.get("ready_receipt_sha256") or "") != expected_ready_sha:
+            errors.append("entry_proof.orb_session.ready_receipt_sha256 does not match ready_receipt")
     visible_agent = visible.get("agent") if isinstance(visible.get("agent"), dict) else {}
     if str(session.get("agent_id") or "") != str(visible_agent.get("id") or ""):
         errors.append("entry_proof.orb_session.agent_id must match pkm_visible.agent.id")
@@ -2586,9 +2606,52 @@ def visible_summary(state: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def public_growth_trace(trace: dict[str, Any]) -> dict[str, Any]:
+    decision = trace.get("decision") if isinstance(trace.get("decision"), dict) else {}
+    public_decision = {}
+    if decision:
+        public_decision = {
+            "winner": decision.get("winner", ""),
+            "label": decision.get("label", ""),
+            "top3": list(decision.get("top3") or [])[:3],
+        }
+    return {
+        "id": trace.get("id", ""),
+        "at": trace.get("at", ""),
+        "kind": trace.get("kind", ""),
+        "source_fingerprint": trace.get("source_fingerprint", ""),
+        "compressed_tags": list(trace.get("compressed_tags") or [])[:12],
+        "decision": public_decision or None,
+        "outcome": trace.get("outcome", ""),
+        "visible_delta": list(trace.get("visible_delta") or [])[:12],
+        "formation_delta": trace.get("formation_delta", {}) if isinstance(trace.get("formation_delta"), dict) else {},
+        "forgetting": "Raw text and private settle notes are not included in pkm.visible.v1.",
+    }
+
+
+def public_orb_runtime(runtime: dict[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(runtime, dict) or not runtime:
+        return {}
+    active = runtime.get("active_decision") if isinstance(runtime.get("active_decision"), dict) else {}
+    result = {
+        "schema": runtime.get("schema", "pkm.orb_runtime.v1"),
+        "updated_at": runtime.get("updated_at", now_iso()),
+    }
+    if active:
+        result["active_decision"] = {
+            "winner": active.get("winner", ""),
+            "label": active.get("label", ""),
+            "confidence": active.get("confidence", 0),
+            "intensity": active.get("intensity", 0),
+            "active_domains": list(active.get("active_domains") or [])[:6],
+        }
+    return result
+
+
 def export_visible(state: dict[str, Any], path: Path, runtime: dict[str, Any] | None = None) -> dict[str, Any]:
     traces = state.get("growth_trace", [])
-    recent = traces[-1] if traces else None
+    public_traces = [public_growth_trace(trace) for trace in traces if isinstance(trace, dict)]
+    recent = public_traces[-1] if public_traces else None
     regions = build_regions(state)
     confidence_modes = build_confidence_modes(state)
     force_summary = build_force_summary(state, regions)
@@ -2660,8 +2723,8 @@ def export_visible(state: dict[str, Any], path: Path, runtime: dict[str, Any] | 
             "dominant_confidence": confidence_modes[0] if confidence_modes else None,
         },
         "latest_growth": recent,
-        "recent_growth": traces[-8:],
-        "runtime": runtime or {},
+        "recent_growth": public_traces[-8:],
+        "runtime": public_orb_runtime(runtime),
         "prototype_count": len(state.get("situation_prototypes", [])),
     }
     sign_visible_export(state, visible)

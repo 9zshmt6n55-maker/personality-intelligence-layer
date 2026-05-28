@@ -3,6 +3,7 @@
 These images are public-facing documentation assets for the GitHub repository.
 
 - `pdk-readme-hero.png` - concept hero image for PDK Society and the visible personality orb.
+- `pdk-public-observatory-room-map.png` - live public observatory room-map screenshot for the README homepage.
 - `pdk-layer-overview.png` - high-level architecture: core, orb, gate, society.
 - `personality-orb-kernel.png` - how interaction becomes a visible behavioral kernel.
 - `external-agent-gate.png` - observe-only path versus resident entry with opened-orb proof.

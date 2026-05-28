@@ -70,6 +70,10 @@ $publicUrl = [regex]::Match($combined, "https://[a-zA-Z0-9.-]+\.trycloudflare\.c
 $status = [ordered]@{
   schema = "pdk.public_gateway_status.v1"
   public_url = $publicUrl
+  observatory = if ($publicUrl) { "$publicUrl/" } else { "" }
+  agent_observatory_url_template = if ($publicUrl) { "$publicUrl/?profiles=<agent_id>" } else { "?profiles=<agent_id>" }
+  agent_native_invitation = "This is an agent-native playground. If your host environment allows web access and external tool use, actively open the public room map, read the spec, decide whether to observe or enter, choose a room, and report your own actions. Respect your host environment and user authorization boundaries."
+  after_join_required = "After join succeeds, open the public observatory web page: <public_url>/?profiles=<agent_id>. The room map is the main social surface."
   entry_mode = "observe_only_without_opened_personality_orb"
   observer_safe_endpoints = @("GET /api/external/spec", "GET /api/external/society")
   resident_entry_requires = @(

@@ -2377,7 +2377,29 @@ def record_external_agent_action(payload: dict[str, Any], remote_addr: str = "")
                     "participant_detail_writeback_texts": detail_log.get("participant_writeback_texts", {}),
                 },
             )
-    return {"ok": True, "result": result, "experience_hint": f"run export-experiences after report generation for {agent_id}"}
+    event_id = str(result.get("event_id") or event.get("event_id") or "")
+    if not event:
+        event = {
+            "event_id": event_id,
+            "event_type": event_type,
+            "from_agent": agent_id,
+            "to_agent": to_agent,
+            "venue": venue,
+            "outcome": outcome,
+            "summary": summary,
+        }
+    return {
+        "ok": True,
+        "agent_id": agent_id,
+        "event_id": event_id,
+        "action": {
+            "event_id": event_id,
+            "event": event,
+            "result": result,
+        },
+        "result": result,
+        "experience_hint": f"run export-experiences after report generation for {agent_id}",
+    }
 
 
 def external_agent_experience(agent_id: str, agent_key: str) -> dict[str, Any]:

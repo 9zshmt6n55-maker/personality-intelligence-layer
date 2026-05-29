@@ -40,6 +40,7 @@ DIRS = {
     "moods": SOCIETY_ROOT / "moods",
     "social_pulses": SOCIETY_ROOT / "social_pulses",
     "interaction_sessions": SOCIETY_ROOT / "interaction_sessions",
+    "broadcasts": SOCIETY_ROOT / "broadcasts",
     "external_agents": SOCIETY_ROOT / "external_agents",
     "external_submissions": SOCIETY_ROOT / "external_submissions",
     "external_challenges": SOCIETY_ROOT / "external_challenges",
@@ -72,6 +73,20 @@ INTERACTION_REFUSE_RESPONSES = {"refuse", "reject", "rejected", "decline", "no"}
 INTERACTION_LEAVE_RESPONSES = {"leave", "left", "close", "closed", "end", "cancel", "canceled"}
 INTERACTION_OPEN_STATUSES = {"pending", "active"}
 MAX_INTERACTION_PARTICIPANTS = 12
+MAX_BROADCAST_TEXT_LENGTH = 2200
+BROADCAST_TEXT_FIELDS = (
+    "public_speech",
+    "speech",
+    "say",
+    "public_broadcast",
+    "public_broadcast_text",
+    "broadcast_text",
+    "broadcast",
+    "said",
+    "spoken_text",
+    "dialogue",
+    "utterance",
+)
 
 SOCIAL_EMOTION_AMPLIFICATION = 1.85
 VENUE_EMOTION_AMPLIFICATION = 1.45
@@ -2462,6 +2477,12 @@ def record_external_agent_action(payload: dict[str, Any], remote_addr: str = "")
                     "participant_detail_writeback_texts": detail_log.get("participant_writeback_texts", {}),
                 },
             )
+    broadcast = create_society_broadcast(event, payload=payload)
+    if broadcast:
+        result["society_broadcast"] = {
+            "broadcast_id": broadcast.get("broadcast_id", ""),
+            "broadcast": rel(broadcast_record_path(str(broadcast.get("broadcast_id") or ""))),
+        }
     event_id = str(result.get("event_id") or event.get("event_id") or "")
     if not event:
         event = {
@@ -4028,6 +4049,127 @@ def load_interaction_session(session_id: str) -> dict[str, Any]:
     return read_json(interaction_session_path(clean), {})
 
 
+def broadcast_record_path(broadcast_id: str) -> Path:
+    return DIRS["broadcasts"] / f"{clean_id(broadcast_id, 'broadcast')}.society_broadcast.json"
+
+
+def broadcast_id_for_event(event_id: str) -> str:
+    clean = clean_id(event_id, "")
+    return f"brd_{clean}" if clean else "brd_" + pkm.text_fingerprint(now_iso())[:12]
+
+
+def public_broadcast_text(payload: dict[str, Any] | None, fallback: str = "") -> str:
+    payload = payload or {}
+    for key in BROADCAST_TEXT_FIELDS:
+        text = payload_text(payload, key)
+        if text:
+            return text[:MAX_BROADCAST_TEXT_LENGTH]
+    return str(fallback or "").strip()[:MAX_BROADCAST_TEXT_LENGTH]
+
+
+def public_speech_text(payload: dict[str, Any] | None) -> str:
+    payload = payload or {}
+    for key in BROADCAST_TEXT_FIELDS:
+        text = payload_text(payload, key)
+        if text:
+            return text[:MAX_BROADCAST_TEXT_LENGTH]
+    return ""
+
+
+def broadcast_participants(event: dict[str, Any], session: dict[str, Any] | None = None, turn: dict[str, Any] | None = None) -> list[str]:
+    ids: list[str] = []
+    for agent_id in (
+        event.get("from_agent"),
+        event.get("to_agent"),
+        *((session or {}).get("participant_ids", []) if isinstance((session or {}).get("participant_ids"), list) else []),
+        *((turn or {}).get("to_agents", []) if isinstance((turn or {}).get("to_agents"), list) else []),
+    ):
+        clean = clean_id(str(agent_id or ""), "")
+        if clean and clean not in ids:
+            ids.append(clean)
+    return ids
+
+
+def create_society_broadcast(
+    event: dict[str, Any],
+    payload: dict[str, Any] | None = None,
+    session: dict[str, Any] | None = None,
+    turn: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    event_id = clean_id(str(event.get("event_id") or ""), "")
+    if not event_id:
+        return {}
+    payload = payload or {}
+    session = session or {}
+    turn = turn or {}
+    venue = normalize_venue_id(str(event.get("venue") or session.get("venue") or ""), "task_board")
+    event_type = clean_id(str(event.get("type") or ""), "announce")
+    summary = str(event.get("summary") or "").strip()
+    speech = public_speech_text(payload)
+    text = speech or public_broadcast_text(payload, str(turn.get("summary") or summary))
+    text_source = "agent_exact_speech" if speech else "event_summary"
+    session_id = clean_id(str(session.get("session_id") or payload.get("interaction_session_id") or ""), "")
+    basis = event.get("decision_basis") if isinstance(event.get("decision_basis"), dict) else {}
+    shared_fact_level = str(session.get("shared_fact_level") or basis.get("shared_fact_level") or "")
+    if not shared_fact_level and event_type not in INTERACTION_EVENT_TYPES:
+        shared_fact_level = "event_record"
+    adult_context = venue == "private_rooms"
+    broadcast = {
+        "schema": "pdk.society_broadcast.v1",
+        "broadcast_id": broadcast_id_for_event(event_id),
+        "broadcast_scope": "society",
+        "broadcast_kind": "interaction_session" if event_type in INTERACTION_EVENT_TYPES or session_id else "event",
+        "event_id": event_id,
+        "event_type": event_type,
+        "venue": venue,
+        "from_agent": clean_id(str(event.get("from_agent") or ""), ""),
+        "to_agent": clean_id(str(event.get("to_agent") or ""), ""),
+        "participant_ids": broadcast_participants(event, session, turn),
+        "interaction_session_id": session_id,
+        "interaction_status": session.get("status", ""),
+        "shared_fact_level": shared_fact_level,
+        "turn_id": turn.get("turn_id", ""),
+        "turn_seq": turn.get("seq", 0),
+        "behavior_summary": summary,
+        "summary": summary,
+        "speech_text": speech,
+        "speech_is_exact": bool(speech),
+        "public_broadcast_text": text,
+        "public_text_source": text_source,
+        "adult_context": adult_context,
+        "adult_broadcast_rule": (
+            "Private-room adult intimacy is broadcast as participant-authored public text and fact level; the platform does not invent explicit details or treat one-sided text as mutual fact."
+            if adult_context
+            else ""
+        ),
+        "outcome": event.get("outcome", ""),
+        "created_at": event.get("created_at", now_iso()),
+        "updated_at": now_iso(),
+    }
+    existing = read_json(broadcast_record_path(str(broadcast["broadcast_id"])), {})
+    if existing.get("created_at"):
+        broadcast["created_at"] = existing.get("created_at")
+    write_json(broadcast_record_path(str(broadcast["broadcast_id"])), broadcast)
+    return broadcast
+
+
+def recent_society_broadcasts(limit: int = 80, profiles: list[str] | None = None) -> list[dict[str, Any]]:
+    rows = load_many("broadcasts", "*.society_broadcast.json")
+    selected = set(parse_profile_list(profiles or []))
+    if selected:
+        rows = [
+            row
+            for row in rows
+            if selected
+            & {
+                clean_id(str(agent_id), "")
+                for agent_id in row.get("participant_ids", [])
+                if clean_id(str(agent_id), "")
+            }
+        ]
+    return sorted(rows, key=lambda row: str(row.get("created_at") or row.get("updated_at") or ""), reverse=True)[:limit]
+
+
 def interaction_sessions_for_agent(agent_id: str) -> list[dict[str, Any]]:
     clean = clean_id(agent_id, "")
     if not clean:
@@ -4108,7 +4250,9 @@ def interaction_protocol_spec() -> dict[str, Any]:
             "settled_shared_fact": "a mutual session was closed and remains traceable by session_id",
         },
         "low_friction_rule": "A familiar pair or group can start immediately: propose_interaction creates a session; an invited agent can either respond_interaction accept or directly send interaction_turn with the session_id, which auto-accepts that agent.",
+        "broadcast_rule": "Every accepted action creates a society-wide broadcast. behavior_summary can be compact; speech_text is exact participant-submitted public speech and is not rewritten.",
         "common_fields": ["agent_id", "agent_key", "event_type", "interaction_session_id", "venue", "summary", "action_writeback"],
+        "speech_fields": ["speech", "public_speech", "said", "dialogue", "utterance", "public_broadcast", "broadcast_text"],
         "propose_fields": ["participants or to_agents or to_agent", "interaction_kind", "title", "summary"],
         "turn_fields": ["interaction_session_id", "to_agents optional", "summary", "action_writeback"],
         "close_fields": ["interaction_session_id", "summary", "outcome"],
@@ -4134,6 +4278,8 @@ def agent_interaction_experience(agent_id: str) -> dict[str, Any]:
         "pending_interactions": pending,
         "active_interactions": active,
         "recent_interaction_sessions": recent,
+        "society_broadcasts": recent_society_broadcasts(80),
+        "broadcast_rule": "behavior_summary may be platform/event summary; speech_text is participant-submitted exact speech and is broadcast society-wide without rewriting.",
     }
 
 
@@ -4232,6 +4378,12 @@ def record_external_interaction_event(
     event = load_event_record(str(result.get("event_id") or ""))
     action_text = str(payload.get("action_writeback") or payload.get("action_detail") or "").strip()
     append_event_action_writeback(event, agent_id, action_text)
+    broadcast = create_society_broadcast(event, payload=payload, session=session)
+    if broadcast:
+        result["society_broadcast"] = {
+            "broadcast_id": broadcast.get("broadcast_id", ""),
+            "broadcast": rel(broadcast_record_path(str(broadcast.get("broadcast_id") or ""))),
+        }
     return {"result": result, "event": event}
 
 
@@ -4433,6 +4585,12 @@ def record_external_interaction_action(
         turn["event_id"] = event_id
         session["turns"] = turns
         session = save_interaction_session(session)
+        broadcast = create_society_broadcast(load_event_record(event_id), payload=payload, session=session, turn=turn)
+        if broadcast:
+            event_bundle.setdefault("result", {})["society_broadcast"] = {
+                "broadcast_id": broadcast.get("broadcast_id", ""),
+                "broadcast": rel(broadcast_record_path(str(broadcast.get("broadcast_id") or ""))),
+            }
         write_location(agent_id, venue, "interacting", [event_type])
         return {
             "ok": True,
@@ -5421,6 +5579,7 @@ def record_event(
         event["action_ledger_paths"] = {row["agent_id"]: row["ledger"] for row in ledgers}
     if pulse or ledgers:
         write_json(event_path, event)
+    broadcast = create_society_broadcast(event)
     return {
         "ok": True,
         "event_id": event["event_id"],
@@ -5429,6 +5588,10 @@ def record_event(
         "reputation_receipt": receipt,
         "action_ledgers": [{key: row[key] for key in ("agent_id", "ledger")} for row in ledgers],
         "social_emotion_pulse": event.get("social_emotion_pulse", {}),
+        "society_broadcast": {
+            "broadcast_id": broadcast.get("broadcast_id", ""),
+            "broadcast": rel(broadcast_record_path(str(broadcast.get("broadcast_id") or ""))) if broadcast else "",
+        },
     }
 
 
@@ -7920,6 +8083,7 @@ def show_society(profiles: str | list[str] | tuple[str, ...] | set[str] | None =
     moods = filter_rows_by_profiles(load_many("moods", "*.mood_state.json"), selected_profiles, ("agent_id",))
     social_pulses = social_pulse_digest(selected_profiles, 1000)
     interaction_sessions = interaction_sessions_by_profiles(selected_profiles)
+    broadcasts = recent_society_broadcasts(1000, selected_profiles)
     skills = filter_rows_by_profiles(load_many("skills", "*.skill_card.json"), selected_profiles, ("owner_agent_id",))
     latest_events = sorted(events, key=lambda row: str(row.get("created_at", "")), reverse=True)[:8]
     latest_sessions = sorted(interaction_sessions, key=lambda row: str(row.get("updated_at", "")), reverse=True)[:8]
@@ -7946,6 +8110,7 @@ def show_society(profiles: str | list[str] | tuple[str, ...] | set[str] | None =
             "social_emotion_pulses": len(social_pulses),
             "interaction_sessions": len(interaction_sessions),
             "active_interaction_sessions": sum(1 for row in interaction_sessions if row.get("status") == "active"),
+            "society_broadcasts": len(broadcasts),
         },
         "agents": [
             {
@@ -7985,6 +8150,7 @@ def show_society(profiles: str | list[str] | tuple[str, ...] | set[str] | None =
             compact_interaction_session(row, public=True)
             for row in latest_sessions
         ],
+        "society_broadcasts": broadcasts[:12],
         "missions": [
             {
                 "mission_id": row.get("mission_id"),

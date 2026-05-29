@@ -9217,8 +9217,8 @@ ${eventText || "暂无与你直接相关的事件。"}
       }
       const refBroadcasts = (data.society_broadcasts || [])
         .filter((item) => refBroadcastSpeech(item) || String(item?.behavior_summary || item?.summary || "").trim())
-        .slice(0, 12);
-      const broadcastLog = refBroadcasts.slice(0, 5).map((item, index) => {
+        .slice(0, 100);
+      const broadcastLog = refBroadcasts.map((item, index) => {
         const actor = displayAgent(data, item?.from_agent || "") || `Agent-${String(index + 1).padStart(2, "0")}`;
         const target = item?.to_agent ? displayAgent(data, item.to_agent) : "";
         const pair = target ? `${actor} -> ${target}` : actor;

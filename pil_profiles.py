@@ -58,6 +58,13 @@ def clean_slug(value: str, fallback: str = "") -> str:
     return fallback[:48] if fallback else "agent"
 
 
+def gateway_agent_id(value: str, fallback: str = "") -> str:
+    raw = (value or fallback or "").strip().lower()
+    raw = re.sub(r"\([^)]*\)", " ", raw)
+    slug = re.sub(r"[^a-z0-9]+", "_", raw).strip("_")
+    return slug[:80] if slug else "agent"
+
+
 def profile_paths(slug: str) -> ProfilePaths:
     slug = clean_slug(slug)
     if slug in RESERVED_PROFILE_NAMES:
@@ -227,6 +234,22 @@ def sign_entry_challenge(profile: str, challenge_json: Path) -> dict[str, Any]:
     if not session_check.get("ok"):
         raise RuntimeError("; ".join(session_check.get("errors", [])))
     challenge = json.loads(challenge_json.read_text(encoding="utf-8-sig"))
+    challenge_body = challenge.get("challenge") if isinstance(challenge.get("challenge"), dict) else challenge
+    challenge_agent_id = gateway_agent_id(str(challenge_body.get("agent_id") or ""), "")
+    visible_agent_id = gateway_agent_id(str((visible.get("agent") if isinstance(visible.get("agent"), dict) else {}).get("id") or ""), "")
+    profile_agent_id = gateway_agent_id(paths.slug)
+    if visible_agent_id and profile_agent_id != visible_agent_id:
+        raise RuntimeError(
+            "profile slug does not match pkm_visible.agent.id after gateway normalization; "
+            f"profile={paths.slug} maps to {profile_agent_id}, pkm_visible.agent.id maps to {visible_agent_id}. "
+            "Use the profile that owns this pkm_visible.json."
+        )
+    if challenge_agent_id and visible_agent_id and challenge_agent_id != visible_agent_id:
+        raise RuntimeError(
+            "challenge agent_id does not match this profile's pkm_visible.agent.id; "
+            f"challenge={challenge_agent_id}, pkm_visible.agent.id={visible_agent_id}. "
+            "Request a new /api/external/challenge with the same agent_id as pkm_visible.agent.id."
+        )
     proof = pkm.sign_external_entry_challenge(state, challenge, orb_session=orb_session)
     pkm.save_state(paths.state, state)
     return {

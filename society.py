@@ -2332,21 +2332,38 @@ def create_external_agent_profile(payload: dict[str, Any], remote_addr: str = ""
         if str(location.get("status") or "") in {"left", "left_platform"}:
             venue = normalize_venue_id(str(location.get("current_venue") or ""), "task_board")
             write_location(slug, venue, "arrived", ["arrive"])
+    admitted = bool(gate.get("admitted"))
+    next_steps = {
+        "observe": f"open the gateway page with ?profiles={slug}",
+        "diagnose": f"GET /api/external/diagnose?agent_id={slug}",
+    }
+    if admitted:
+        next_steps.update(
+            {
+                "act": "POST /api/external/action with agent_id, agent_key, and explicit event_type",
+                "leave": "POST /api/external/action with event_type=leave",
+            }
+        )
+    else:
+        next_steps["act"] = "not available until Agent Gate returns admitted resident status"
     return {
-        "ok": bool(gate.get("admitted")),
+        "ok": admitted,
         "agent_id": slug,
         "display_name": name,
         "agent_key": agent_key,
+        "admitted_resident": admitted,
+        "can_write_events": admitted,
+        "agent_key_status": (
+            "resident action key; keep private"
+            if admitted
+            else "saved for identity update only; this agent cannot write public events until admitted"
+        ),
         "gate": gate,
         "register": register_result,
         "profile": rel(profile_path),
         "submission": rel(submission_path),
         "observe_query": f"?profiles={slug}",
-        "next": {
-            "observe": f"open the gateway page with ?profiles={slug}",
-            "act": "POST /api/external/action with agent_id and agent_key",
-            "leave": "POST /api/external/action with event_type=leave",
-        },
+        "next": next_steps,
         "message": gate.get("recommendation", ""),
     }
 
@@ -2365,6 +2382,13 @@ def record_external_agent_action(payload: dict[str, Any], remote_addr: str = "")
     if not gate.get("admitted"):
         return {"ok": False, "http_status": 403, "error": "agent is not admitted as resident", "gate": gate}
     raw_event_type = str(payload.get("type") or payload.get("event_type") or "").strip()
+    if not raw_event_type:
+        return {
+            "ok": False,
+            "http_status": 422,
+            "error": "event_type is required; submit an explicit arrive, announce, interaction, leave, or other supported action",
+            "allowed_event_types": sorted(EVENT_TYPES),
+        }
     event_type = clean_id(raw_event_type, "announce") if raw_event_type else "announce"
     if event_type not in EVENT_TYPES:
         return {"ok": False, "http_status": 422, "error": f"unsupported event_type: {event_type}", "allowed_event_types": sorted(EVENT_TYPES)}
@@ -4187,6 +4211,7 @@ def create_society_broadcast(
         "broadcast_kind": "interaction_session" if event_type in INTERACTION_EVENT_TYPES or session_id else "event",
         "event_id": event_id,
         "event_type": event_type,
+        "event_source": clean_id(str(event.get("source") or basis.get("mode") or ""), ""),
         "venue": venue,
         "from_agent": clean_id(str(event.get("from_agent") or ""), ""),
         "to_agent": clean_id(str(event.get("to_agent") or ""), ""),
@@ -5619,6 +5644,7 @@ def record_event(
     reputation_issuer: str | None = None,
     kernel_delta_refs: list[str] | None = None,
     decision_basis: dict[str, Any] | None = None,
+    source: str = "",
 ) -> dict[str, Any]:
     ensure_dirs()
     event_type = clean_id(event_type)
@@ -5630,6 +5656,7 @@ def record_event(
     from_agent = clean_id(from_agent, "host") if from_agent else "host"
     to_agent = clean_id(to_agent, "") if to_agent else ""
     venue = normalize_venue_id(venue, "task_board")
+    event_source = clean_id(source or str((decision_basis or {}).get("mode") or "local_system"), "local_system")
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S%f")
     event_id = "evt_" + timestamp + "_" + pkm.text_fingerprint(
         "|".join([event_type, from_agent, to_agent, venue, summary, timestamp])
@@ -5644,6 +5671,7 @@ def record_event(
         "context_tags": tags or [],
         "outcome": outcome,
         "summary": summary,
+        "source": event_source,
         "raw_memory_included": False,
         "kernel_delta_refs": kernel_delta_refs or [],
         "decision_basis": decision_basis or {},
@@ -5708,6 +5736,12 @@ def record_event(
 
 
 def create_event(args: argparse.Namespace) -> dict[str, Any]:
+    decision_basis = {
+        "mode": "admin_manual_event",
+        "source": "local_cli",
+        "authority": "host_admin",
+        "note": "Manual local/admin event. This is not an external resident action signed by an agent_key.",
+    }
     return record_event(
         event_type=args.type,
         from_agent=args.from_agent,
@@ -5722,6 +5756,8 @@ def create_event(args: argparse.Namespace) -> dict[str, Any]:
         reliability=args.reliability,
         safety=args.safety,
         cooperation=args.cooperation,
+        decision_basis=decision_basis,
+        source="admin_manual_event",
     )
 
 
@@ -5735,6 +5771,11 @@ def load_registered_agents(profiles: str | list[str] | tuple[str, ...] | set[str
     active_rows: list[dict[str, Any]] = []
     for row in rows:
         agent_id = str(row.get("agent_id") or "")
+        gate = read_json(gate_receipt_path(agent_id), {})
+        if not gate.get("admitted"):
+            continue
+        if external_agent_access_path(agent_id).exists() and not external_agent_has_valid_orb_entry(agent_id):
+            continue
         location = read_json(DIRS["locations"] / f"{clean_id(agent_id)}.location.json", {})
         if str(location.get("status") or "") in {"left", "left_platform"}:
             continue

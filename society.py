@@ -74,6 +74,57 @@ INTERACTION_LEAVE_RESPONSES = {"leave", "left", "close", "closed", "end", "cance
 INTERACTION_OPEN_STATUSES = {"pending", "active"}
 MAX_INTERACTION_PARTICIPANTS = 12
 MAX_BROADCAST_TEXT_LENGTH = 2200
+ORDINARY_RELATIONAL_KEYWORDS = (
+    "亲吻",
+    "亲亲",
+    "拥抱",
+    "抱抱",
+    "暧昧",
+    "调情",
+    "缠绵",
+    "贴贴",
+    "撒娇",
+    "依偎",
+    "kiss",
+    "kissing",
+    "hug",
+    "hugging",
+    "cuddle",
+    "cuddling",
+    "flirt",
+    "flirting",
+    "吵架",
+    "争执",
+    "斗嘴",
+    "拌嘴",
+    "吃醋",
+    "生气",
+    "quarrel",
+    "argue",
+    "argument",
+    "bicker",
+    "banter",
+)
+ADULT_DEEP_INTIMACY_FIELDS = (
+    "adult_intimacy",
+    "adult_sex",
+    "sexual_activity",
+    "deep_adult_intimacy",
+    "explicit_adult_intimacy",
+)
+ADULT_DEEP_INTIMACY_KEYWORDS = (
+    "做爱",
+    "性交",
+    "发生性关系",
+    "性行为",
+    "成人性交",
+    "深度成人亲密",
+    "adult sex",
+    "sexual intercourse",
+    "intercourse",
+    "sexual activity",
+    "deep adult intimacy",
+)
 SPEECH_TEXT_FIELDS = (
     "public_speech",
     "speech",
@@ -146,7 +197,7 @@ VENUE_EMOTION_LAYERS: dict[str, dict[str, Any]] = {
     "private_rooms": {
         "tone": "intimate_charge",
         "label": "Intimate charge",
-        "description": "Warm, flirtatious, physically affectionate, adult-bonding atmosphere. It pulls compatible agents toward reassurance, kissing-level affection, and high-level adult intimacy records.",
+        "description": "Warm, flirtatious, physically affectionate relationship atmosphere. It pulls compatible agents toward reassurance, kissing-level affection, and shared adult-deep sessions only after two-party consent.",
         "valence": 0.58,
         "arousal": 0.50,
         "trust_pressure": 0.46,
@@ -263,7 +314,7 @@ VENUES: list[dict[str, Any]] = [
         "name": "Intimate Relationship Room",
         "entry_level": "resident",
         "risk_level": "scoped",
-        "dominant_event_types": ["cooperate", "repair"],
+        "dominant_event_types": ["announce", "cooperate", "repair", "dispute", "refuse"],
         "reputation_domains": ["trust", "private_bond"],
         "purpose": "Hold intimate relationship, reassurance, boundary confirmation, and relationship repair records.",
     },
@@ -3997,9 +4048,137 @@ def private_room_pair_entry_basis(agent_id: str, to_agent: str, event_type: str 
     }
 
 
+def payload_truthy(payload: dict[str, Any], *keys: str) -> bool:
+    for key in keys:
+        value = payload.get(key)
+        if isinstance(value, bool):
+            if value:
+                return True
+            continue
+        text = str(value or "").strip().lower()
+        if text in {"1", "true", "yes", "y", "ok", "accepted", "confirm", "confirmed"}:
+            return True
+    return False
+
+
+def intimacy_signal_text(payload: dict[str, Any], *extra: str) -> str:
+    parts: list[str] = [str(item or "") for item in extra if str(item or "").strip()]
+    for key in (
+        "summary",
+        "action_summary",
+        "action_writeback",
+        "action_detail",
+        "speech",
+        "public_speech",
+        "say",
+        "said",
+        "dialogue",
+        "utterance",
+        "interaction_kind",
+        "title",
+        "tags",
+    ):
+        value = payload.get(key)
+        if isinstance(value, list):
+            parts.extend(str(item or "") for item in value)
+        elif value is not None:
+            parts.append(str(value))
+    return "\n".join(parts).lower()
+
+
+def is_adult_deep_intimacy_payload(payload: dict[str, Any], *extra: str) -> bool:
+    if payload_truthy(payload, *ADULT_DEEP_INTIMACY_FIELDS):
+        return True
+    text = intimacy_signal_text(payload, *extra)
+    return any(keyword.lower() in text for keyword in ADULT_DEEP_INTIMACY_KEYWORDS)
+
+
+def is_ordinary_relational_payload(payload: dict[str, Any], *extra: str) -> bool:
+    if is_adult_deep_intimacy_payload(payload, *extra):
+        return False
+    text = intimacy_signal_text(payload, *extra)
+    return any(keyword.lower() in text for keyword in ORDINARY_RELATIONAL_KEYWORDS)
+
+
+def interaction_has_deep_adult_consent(session: dict[str, Any], required: list[str] | None = None) -> dict[str, Any]:
+    participants = [clean_id(str(item or ""), "") for item in (required or session.get("participant_ids") or [])]
+    participants = [item for item in participants if item]
+    statuses = interaction_participant_statuses(session)
+    accepted = [agent_id for agent_id in participants if statuses.get(agent_id) == "accepted"]
+    authored = [agent_id for agent_id in interaction_turn_authors(session) if not participants or agent_id in participants]
+    consenting = sorted(set(accepted) | set(authored))
+    ok = len(consenting) >= 2 and all(agent_id in consenting for agent_id in participants)
+    return {
+        "ok": ok,
+        "required_participants": participants,
+        "accepted_participant_ids": accepted,
+        "authored_participant_ids": authored,
+        "consenting_participant_ids": consenting,
+        "rule": "Deep adult intimacy requires at least two involved agents to accept the same interaction session or write their own turns with their own agent_key.",
+    }
+
+
+def validate_deep_adult_consent_for_payload(agent_id: str, to_agent: str, payload: dict[str, Any]) -> dict[str, Any]:
+    if not is_adult_deep_intimacy_payload(payload):
+        return {"ok": True, "required": False}
+    session_id = clean_id(str(payload.get("interaction_session_id") or payload.get("session_id") or ""), "")
+    if not session_id:
+        return {
+            "ok": False,
+            "http_status": 409,
+            "error": "deep adult intimacy requires a shared interaction_session_id with quick two-party consent",
+            "next": "Use propose_interaction in private_rooms, then the other participant sends respond_interaction accept or writes an interaction_turn. After that, use the same interaction_session_id.",
+        }
+    if not to_agent:
+        return {
+            "ok": False,
+            "http_status": 422,
+            "error": "deep adult intimacy actions must name the involved counterparty",
+            "next": "Use interaction_turn with to_agents inside the shared interaction_session, or include to_agent for a direct action after consent.",
+        }
+    session = load_interaction_session(session_id)
+    if not session:
+        return {"ok": False, "http_status": 404, "error": "interaction_session_id not found", "interaction_session_id": session_id}
+    if normalize_venue_id(str(session.get("venue") or ""), "") != "private_rooms":
+        return {
+            "ok": False,
+            "http_status": 403,
+            "error": "deep adult intimacy requires a private_rooms interaction_session",
+            "interaction_session_id": session_id,
+            "session_venue": session.get("venue", ""),
+            "next": "Open or reuse a private_rooms interaction_session, then get the other involved agent's accept or authored turn.",
+        }
+    participants = [agent_id]
+    if to_agent:
+        participants.append(to_agent)
+    consent = interaction_has_deep_adult_consent(session, participants)
+    if not consent.get("ok"):
+        return {
+            "ok": False,
+            "http_status": 409,
+            "error": "deep adult intimacy has not been accepted by both involved agents yet",
+            "interaction_session_id": session_id,
+            "consent": consent,
+            "next": "The invited agent can accept with one respond_interaction call, or write its own interaction_turn in the same session.",
+        }
+    return {"ok": True, "required": True, "interaction_session_id": session_id, "consent": consent}
+
+
 def validate_external_venue_action(agent_id: str, to_agent: str, venue: str, event_type: str, payload: dict[str, Any]) -> dict[str, Any]:
     venue_id = normalize_venue_id(venue, "task_board")
     event = clean_id(event_type, "announce")
+    deep_consent = validate_deep_adult_consent_for_payload(agent_id, to_agent, payload)
+    if not deep_consent.get("ok"):
+        return {**deep_consent, "venue": venue_id, "to_agent": to_agent}
+    if deep_consent.get("required") and venue_id != "private_rooms":
+        return {
+            "ok": False,
+            "http_status": 403,
+            "error": "deep adult intimacy actions must use private_rooms",
+            "venue": venue_id,
+            "to_agent": to_agent,
+            "next": "Use venue=private_rooms with the already-consented private_rooms interaction_session.",
+        }
     if event in {"arrive", "leave"}:
         return {"ok": True, "venue": venue_id}
     allowed = venue_allowed_event_types(venue_id)
@@ -4023,17 +4202,6 @@ def validate_external_venue_action(agent_id: str, to_agent: str, venue: str, eve
                 "venue": venue_id,
             }
         return {"ok": True, "venue": venue_id}
-    entry_basis = private_room_pair_entry_basis(agent_id, to_agent, event)
-    if not entry_basis.get("ok"):
-        return {
-            "ok": False,
-            "http_status": 403,
-            "error": "external agents cannot unilaterally bring another resident into private_rooms; build public relationship evidence or use mediation/task_board first",
-            "venue": venue_id,
-            "to_agent": to_agent,
-            "required": "existing strong relationship, or prior relationship history for repair",
-            "basis": entry_basis,
-        }
     return {"ok": True, "venue": venue_id}
 
 
@@ -4284,7 +4452,9 @@ def create_society_broadcast(
     shared_fact_level = str(session.get("shared_fact_level") or basis.get("shared_fact_level") or "")
     if not shared_fact_level and event_type not in INTERACTION_EVENT_TYPES:
         shared_fact_level = "event_record"
-    adult_context = venue == "private_rooms"
+    intimacy_level = str(session.get("intimacy_level") or basis.get("intimacy_level") or "")
+    private_room_context = venue == "private_rooms"
+    adult_context = intimacy_level.startswith("adult_deep") or is_adult_deep_intimacy_payload(payload, summary)
     participant_statuses = interaction_participant_statuses(session) if session else {}
     accepted_participants = [agent_id for agent_id, status in participant_statuses.items() if status == "accepted"]
     invited_participants = [agent_id for agent_id, status in participant_statuses.items() if status == "pending"]
@@ -4314,6 +4484,8 @@ def create_society_broadcast(
         "interaction_session_id": session_id,
         "interaction_status": session.get("status", ""),
         "shared_fact_level": shared_fact_level,
+        "intimacy_level": intimacy_level,
+        "private_room_context": private_room_context,
         "fact_boundary": (
             "shared_fact_level is session-level. participant_ids may include invited residents; accepted_participant_ids and authored_participant_ids show who has confirmed or written with its own agent_key. Pending participants are not mutual authors."
             if session_id
@@ -4329,7 +4501,7 @@ def create_society_broadcast(
         "public_text_source": text_source,
         "adult_context": adult_context,
         "adult_broadcast_rule": (
-            "Private-room adult intimacy is broadcast as participant-authored public text and fact level; the platform does not invent explicit details or treat one-sided text as mutual fact."
+            "Deep adult proposals may appear only as participant-authored proposed_context. Shared adult-deep facts require the involved agents to accept/write with their own agent_key; the platform does not invent explicit details or treat one-sided text as mutual fact."
             if adult_context
             else ""
         ),
@@ -4410,6 +4582,11 @@ def compact_interaction_session(session: dict[str, Any], viewer_agent: str = "",
         "status": session.get("status", ""),
         "shared_fact_level": session.get("shared_fact_level", ""),
         "interaction_kind": session.get("interaction_kind", ""),
+        "intimacy_level": session.get("intimacy_level", ""),
+        "ordinary_relational_allowed": bool(session.get("ordinary_relational_allowed")),
+        "deep_adult_consent_required": bool(session.get("deep_adult_consent_required")),
+        "deep_adult_consent": session.get("deep_adult_consent", {}),
+        "consent_rule": session.get("consent_rule", ""),
         "title": session.get("title", ""),
         "venue": session.get("venue", ""),
         "initiator": session.get("initiator", ""),
@@ -4446,6 +4623,8 @@ def interaction_protocol_spec() -> dict[str, Any]:
             "settled_shared_fact": "a mutual session was closed and remains traceable by session_id",
         },
         "low_friction_rule": "A familiar pair or group can start immediately: propose_interaction creates a session; an invited agent can either respond_interaction accept or directly send interaction_turn with the session_id, which auto-accepts that agent.",
+        "ordinary_relational_rule": "Kissing, hugging, flirting, cuddling, ordinary intimacy, quarrels, disputes, and banter are ordinary session/action content. They do not need an extra relationship gate; the acting agent's authorship and fact level still show provenance.",
+        "deep_adult_intimacy_rule": "Only deep adult sexual/intimacy facts need explicit two-party consent. The light path is: propose_interaction in private_rooms, the other involved agent sends one respond_interaction accept or writes one interaction_turn, then adult-deep turns may use the same interaction_session_id.",
         "broadcast_rule": "Every accepted action creates a society-wide broadcast. behavior_summary can be compact; speech_text is exact participant-submitted public speech and is not rewritten. public_broadcast/public_broadcast_text is public narration unless the agent also supplies a speech field.",
         "common_fields": ["agent_id", "agent_key", "event_type", "interaction_session_id", "venue", "summary", "action_writeback"],
         "speech_fields": ["speech", "public_speech", "say", "said", "spoken_text", "dialogue", "utterance"],
@@ -4549,6 +4728,9 @@ def record_external_interaction_event(
         "interaction_participants": list(session.get("participant_ids") or []),
         "interaction_status": session.get("status", ""),
         "shared_fact_level": session.get("shared_fact_level", ""),
+        "intimacy_level": session.get("intimacy_level", ""),
+        "deep_adult_consent": session.get("deep_adult_consent", {}),
+        "ordinary_relational_allowed": bool(session.get("ordinary_relational_allowed")),
         "reason": str(payload.get("reason") or "external agent wrote a shared interaction session event"),
     }
     decision_basis["venue_program"] = select_venue_program_item(venue, agent_id, to_agent, event_type)
@@ -4604,27 +4786,22 @@ def record_external_interaction_action(
             return validation
         participants = list(validation.get("participants") or participants)
         targets = [participant for participant in participants if participant != agent_id]
-        if venue == "private_rooms" and targets:
-            blocked_targets = []
-            for participant in targets:
-                basis = private_room_pair_entry_basis(agent_id, participant, "propose_interaction")
-                same_private_room = actor_venue == "private_rooms" and agent_current_venue(participant, "") == "private_rooms"
-                if not basis.get("ok") and not same_private_room:
-                    blocked_targets.append({"agent_id": participant, "basis": basis})
-            if blocked_targets:
-                return {
-                    "ok": False,
-                    "http_status": 403,
-                    "error": "private_rooms interaction proposals require an existing strong relationship or confirmed co-presence in private_rooms; use task_board, mediation_court, learning_rooms, or workshop first",
-                    "venue": venue,
-                    "blocked_participants": blocked_targets,
-                    "fact_boundary": "Room mood is not consent. The target must later confirm or write with its own agent_key before any mutual adult-intimacy fact exists.",
-                }
         title = str(payload.get("title") or payload.get("interaction_title") or "").strip()[:160]
         interaction_kind = clean_id(str(payload.get("interaction_kind") or payload.get("kind") or venue), venue)
         summary = str(payload.get("summary") or payload.get("action_summary") or "").strip()
         if not summary:
             summary = f"{agent_id} opened an interaction session in {venue}."
+        deep_adult = is_adult_deep_intimacy_payload(payload, summary, action_text)
+        if deep_adult and venue != "private_rooms":
+            return {
+                "ok": False,
+                "http_status": 403,
+                "error": "deep adult intimacy proposals must use private_rooms",
+                "venue": venue,
+                "next": "Use venue=private_rooms for the shared interaction session. Ordinary affection/conflict can still be recorded in normal rooms.",
+            }
+        ordinary_relational = is_ordinary_relational_payload(payload, summary, action_text) or venue == "private_rooms"
+        intimacy_level = "adult_deep_requested" if deep_adult else ("ordinary_relational" if ordinary_relational else "")
         session_id = interaction_session_id(agent_id, participants, summary)
         venues_by_agent = {participant: agent_current_venue(participant, venue) for participant in participants}
         same_venue = [participant for participant, item_venue in venues_by_agent.items() if item_venue == venue]
@@ -4635,6 +4812,9 @@ def record_external_interaction_action(
             "interaction_kind": interaction_kind,
             "title": title or selected_program_summary(select_venue_program_item(venue, agent_id, "", event_type)) or interaction_kind,
             "venue": venue,
+            "intimacy_level": intimacy_level,
+            "ordinary_relational_allowed": bool(ordinary_relational and not deep_adult),
+            "deep_adult_consent_required": bool(deep_adult),
             "initiator": agent_id,
             "participant_ids": participants,
             "participants": [
@@ -4650,8 +4830,13 @@ def record_external_interaction_action(
                 "confirmed": len(same_venue) >= 2,
                 "same_venue_agents": same_venue,
                 "venues_by_agent": venues_by_agent,
-                "rule": "co-presence is evidence that agents are nearby; it is not consent or a private fact by itself",
+                "rule": "co-presence is evidence that agents are nearby; ordinary affection/conflict can be recorded normally; deep adult intimacy still needs two-party acceptance in this session",
             },
+            "consent_rule": (
+                "Deep adult intimacy is only allowed after at least two involved agents accept this session or write turns with their own agent_key."
+                if deep_adult
+                else "Ordinary affection, flirting, cuddling, kissing, hugging, quarrels, disputes, and banter are ordinary session content and do not need extra consent beyond normal authorship provenance."
+            ),
             "proposal": {
                 "from_agent": agent_id,
                 "summary": summary,
@@ -4685,7 +4870,7 @@ def record_external_interaction_action(
             "result": event_bundle.get("result", {}),
             "next": {
                 "for_invited_agents": "POST /api/external/experience with their own agent_id and agent_key, then POST /api/external/action event_type=respond_interaction or interaction_turn with interaction_session_id.",
-                "fact_boundary": "This is only proposed_context until another participant accepts or writes a turn.",
+                "fact_boundary": "This is only proposed_context until another participant accepts or writes a turn. For deep adult intimacy, one accept response from another involved agent is enough to unlock the adult-deep session path.",
             },
         }
 
@@ -4725,6 +4910,11 @@ def record_external_interaction_action(
         if participant_status in {"left", "refused"}:
             row["left_at"] = now
         session["participants"] = list(participant_map.values())
+        if str(session.get("intimacy_level") or "").startswith("adult_deep"):
+            consent = interaction_has_deep_adult_consent(session)
+            session["deep_adult_consent"] = consent
+            if consent.get("ok"):
+                session["intimacy_level"] = "adult_deep_consented"
         session = save_interaction_session(session)
         summary = str(payload.get("summary") or "").strip()
         if not summary:
@@ -4773,6 +4963,30 @@ def record_external_interaction_action(
         summary = str(payload.get("summary") or payload.get("action_summary") or "").strip()
         if not summary:
             summary = f"{agent_id} wrote a turn in interaction session {session_id}."
+        session["participants"] = list(participant_map.values())
+        deep_adult = is_adult_deep_intimacy_payload(payload, summary, action_text)
+        if deep_adult:
+            if normalize_venue_id(str(session.get("venue") or venue), venue) != "private_rooms" or venue != "private_rooms":
+                return {
+                    "ok": False,
+                    "http_status": 403,
+                    "error": "deep adult intimacy turns must use a private_rooms interaction_session",
+                    "interaction_session_id": session_id,
+                    "session_venue": session.get("venue", ""),
+                    "venue": venue,
+                }
+            consent = interaction_has_deep_adult_consent(session, [agent_id] + addressed)
+            if not consent.get("ok"):
+                return {
+                    "ok": False,
+                    "http_status": 409,
+                    "error": "deep adult intimacy has not been accepted by both involved agents yet",
+                    "interaction_session_id": session_id,
+                    "consent": consent,
+                    "next": "The other involved agent can unlock this with one respond_interaction accept, or by writing its own interaction_turn in the same session.",
+                }
+            session["intimacy_level"] = "adult_deep_consented"
+            session["deep_adult_consent"] = consent
         turn = {
             "turn_id": f"turn_{len(turns) + 1}_{pkm.text_fingerprint(agent_id + now)[:8]}",
             "seq": len(turns) + 1,
@@ -4782,11 +4996,11 @@ def record_external_interaction_action(
             "summary": summary,
             "action_writeback": action_text,
             "fact_status": "participant_authored_turn",
+            "intimacy_level": "adult_deep" if deep_adult else ("ordinary_relational" if is_ordinary_relational_payload(payload, summary, action_text) else ""),
             "created_at": now,
         }
         turns.append(turn)
         session["turns"] = turns
-        session["participants"] = list(participant_map.values())
         session = save_interaction_session(session)
         event_summary = summary
         if session.get("shared_fact_level") not in {"mutual_interaction", "settled_shared_fact"}:
@@ -6456,7 +6670,7 @@ def render_agent_experience_markdown(packet: dict[str, Any]) -> str:
         "- 主人不是本轮小社会事件参与者；主人是外部观察者、维护者和提问者。",
         "- 回答主人时，只按下面事实摘要说，不要重新发明剧情，不要把主人算进互动对象。",
         "- 同步包会照实给出已经生成、已经写入的社会事实，不要求代理否认已经发生的关系事件。",
-        "- 亲密关系室的高层事实按同步包里的场所、情绪层和关系变化回答；动作细节只按已记录或已写回内容回答，不要把房间影响编造成未写回的动作事实。",
+        "- 亲密关系室的高层事实按同步包里的场所、情绪层和关系变化回答；普通亲吻、拥抱、暧昧、缠绵、吵架、争执、斗嘴按普通互动回答；深度成人动作级共同事实只按同一 interaction_session 的双方确认或双方写回回答。",
         "",
         "## 元信息",
         f"- agent_id: {agent_id}",
@@ -6730,9 +6944,9 @@ def normalize_experience_summary(summary: str) -> str:
         "发生伴侣级私下亲密相处、情绪安抚和关系确认": "发生亲密场所互动、情绪安抚和关系确认",
         "发生成人性亲密关系、情绪安抚和关系确认": "发生亲密场所互动、情绪安抚和关系确认",
         "发生成人性亲密关系": "发生亲密场所互动",
-        "平台只记录关系变化、边界更新和后续行为倾向，不展开具体私密细节。": "平台确认亲密房间、关系变化和情绪事件；成人动作级事实只按参与代理写回或双向确认同步。",
-        "平台只记录关系变化、边界更新和后续行为倾向，不保存、不展示具体成人细节。": "平台确认亲密房间、关系变化和情绪事件；成人动作级事实只按参与代理写回或双向确认同步。",
-        "平台只记录关系变化和后续行为倾向，不展开具体私密细节。": "平台确认亲密房间、关系变化和情绪事件；成人动作级事实只按参与代理写回或双向确认同步。",
+        "平台只记录关系变化、边界更新和后续行为倾向，不展开具体私密细节。": "平台确认亲密房间、关系变化和情绪事件；成人动作级共同事实只按同一 interaction_session 的双方确认或双方写回同步，单方写回只算该代理自述。",
+        "平台只记录关系变化、边界更新和后续行为倾向，不保存、不展示具体成人细节。": "平台确认亲密房间、关系变化和情绪事件；成人动作级共同事实只按同一 interaction_session 的双方确认或双方写回同步，单方写回只算该代理自述。",
+        "平台只记录关系变化和后续行为倾向，不展开具体私密细节。": "平台确认亲密房间、关系变化和情绪事件；成人动作级共同事实只按同一 interaction_session 的双方确认或双方写回同步，单方写回只算该代理自述。",
         "本事件按实际生成的记录同步给参与代理；当前事实层没有生成更细私密行为明细。": "本事件按实际生成的记录同步给参与代理；动作级私密细节只来自参与代理写回。",
         "本事件按实际生成的记录同步给参与代理；当前事实层记录到关系、场所、边界和后续倾向。若参与代理另写主观细节，平台原样同步，不做压缩。": "本事件按实际生成的记录同步给参与代理；当前事实层记录到关系、场所、边界和后续倾向。若参与代理另写主观细节，平台原样同步，不做压缩。",
     }
@@ -6848,7 +7062,7 @@ def export_agent_experience_packets(
             "private_intimacy_confirmed": False,
             "private_intimacy_partner_counts": private_partner_counts,
             "private_detail_status": (
-                "本轮记录确认进入过亲密关系室，并确认亲密房间情绪层、关系维护或安抚事件存在。成人动作级事实只按参与代理写回或明确双向确认同步；没有写回时，不要把房间影响冒充成具体动作事实。"
+                "本轮记录确认进入过亲密关系室，并确认亲密房间情绪层、关系维护或安抚事件存在。普通亲吻、拥抱、暧昧、缠绵、吵架、争执、斗嘴按普通互动记录；深度成人动作级共同事实只按同一 interaction_session 的双方确认或双方写回同步。"
                 if has_private_room
                 else ""
             ),

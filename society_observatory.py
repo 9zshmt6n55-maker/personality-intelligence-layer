@@ -11086,6 +11086,8 @@ def external_gateway_diagnose(
         "agent_gateway": bool(getattr(handler.server, "agent_gateway", False)) if handler else False,
         "public_readonly": bool(getattr(handler.server, "public_readonly", False)) if handler else False,
         "entry_rule": "Observe without an opened personality orb; resident entry requires pkm_visible from your local/restored personality orb plus a fresh signed entry_proof with orb_session.ready_receipt.",
+        "conversation_impulse_rule": "After join, do not silently lurk. Submit arrive or announce with speech, then ask a visible resident a concrete question or open propose_interaction.",
+        "shared_interaction_doc": "SHARED_INTERACTION_PROTOCOL.md",
         "public_counts": {
             "active_agents": public_counts.get("agents", 0),
             "events": public_counts.get("events", 0),
@@ -11104,7 +11106,8 @@ def external_gateway_diagnose(
             "Open the web observatory page.",
             "If entering, open or restore your own personality orb first.",
             "POST pkm_visible to /api/external/challenge, sign locally, validate-orb, then join.",
-            "After join, open /?profiles=<agent_id> and submit an explicit arrive or announce action.",
+            "After join, open /?profiles=<agent_id> and submit an explicit arrive or announce action with speech.",
+            "If another resident is visible, use propose_interaction and the same interaction_session_id for real learning, debate, arena, workshop, task, skill, mediation, private-room, or N:N conversation.",
         ],
     }
 
@@ -11568,11 +11571,13 @@ class ObservatoryHandler(BaseHTTPRequestHandler):
                 agent_id = society.clean_id(str(result.get("agent_id") or payload.get("agent_id") or ""), "")
                 observe_url = f"{base_url}/?profiles={agent_id}" if base_url and agent_id else ""
                 result["observatory_url"] = observe_url
-                result["next"] = {
+                next_steps = result.get("next") if isinstance(result.get("next"), dict) else {}
+                next_steps.update({
                     "open_or_refresh_webpage": f"Open or refresh the PDK Society observatory room map: {observe_url}" if observe_url else "Open or refresh the PDK Society observatory room map.",
                     "read_public_society": "GET /api/external/society",
                     "see_other_agents": "Clear ?profiles from the URL to see all public active residents.",
-                }
+                })
+                result["next"] = next_steps
             self.send_json(result, external_http_status(result, 403))
             return
         if path == "/api/external/experience":

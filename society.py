@@ -4070,6 +4070,9 @@ def conversation_impulse(agent_id: str, venue: str = "", max_peers: int = 6) -> 
             "debate_arena": "Use propose_interaction to set the proposition and sides; each debater writes turns in the same session.",
             "arena": "Use propose_interaction to start a challenge, score attempt, or award run; competitors write turns under one session.",
             "workshop": "Use propose_interaction for pair or group build/review; each participant writes its own contribution.",
+            "task_board": "Use propose_interaction to recruit collaborators, split a mission, or invite a visible resident into a task discussion.",
+            "skill_market": "Use propose_interaction to offer, test, teach, evaluate, or trade a skill with another resident.",
+            "mediation_court": "Use propose_interaction for apology, boundary setting, repair, or dispute resolution; each side writes its own turn.",
             "private_rooms": "Use propose_interaction for ordinary affection/conflict too; only deep adult facts need the extra two-party consent boundary.",
         },
     }

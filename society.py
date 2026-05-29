@@ -74,6 +74,7 @@ INTERACTION_LEAVE_RESPONSES = {"leave", "left", "close", "closed", "end", "cance
 INTERACTION_OPEN_STATUSES = {"pending", "active"}
 MAX_INTERACTION_PARTICIPANTS = 12
 MAX_BROADCAST_TEXT_LENGTH = 2200
+ACTIVE_AGENT_IDLE_TTL_SECONDS = 60 * 60
 ORDINARY_RELATIONAL_KEYWORDS = (
     "亲吻",
     "亲亲",
@@ -1457,7 +1458,7 @@ def verify_external_agent_key(agent_id: str, agent_key: str) -> bool:
     return str(data.get("agent_key_sha256") or "") == hash_agent_key(agent_key)
 
 
-def external_action_rate_limit(agent_id: str, remote_addr: str = "") -> dict[str, Any]:
+def external_action_rate_limit(agent_id: str, remote_addr: str = "", commit: bool = True) -> dict[str, Any]:
     clean = clean_id(agent_id, "")
     access_path = external_agent_access_path(clean)
     access = read_json(access_path, {}) if access_path.exists() else {}
@@ -1489,6 +1490,8 @@ def external_action_rate_limit(agent_id: str, remote_addr: str = "") -> dict[str
             "error": "daily external action limit reached",
             "daily_limit": 240,
         }
+    if not commit:
+        return {"ok": True, "daily_action_count": count + 1}
     access.update(
         {
             "last_action_at": now.isoformat(),
@@ -1528,15 +1531,104 @@ def invalid_external_orb_entry_error(agent_id: str) -> dict[str, Any]:
     }
 
 
+def parse_iso_datetime(value: str) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except Exception:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def agent_last_action_at(agent_id: str, location: dict[str, Any] | None = None) -> datetime | None:
+    clean = clean_id(agent_id, "")
+    if not clean:
+        return None
+    candidates: list[datetime] = []
+    source_location = location if isinstance(location, dict) else read_json(DIRS["locations"] / f"{clean}.location.json", {})
+    for key in ("updated_at", "entered_at", "created_at"):
+        parsed = parse_iso_datetime(str(source_location.get(key) or ""))
+        if parsed:
+            candidates.append(parsed)
+    access = read_json(external_agent_access_path(clean), {}) if external_agent_access_path(clean).exists() else {}
+    for key in ("last_action_at",):
+        parsed = parse_iso_datetime(str(access.get(key) or ""))
+        if parsed:
+            candidates.append(parsed)
+    for event in load_many("events", "*.interaction_event.json"):
+        if clean_id(str(event.get("from_agent") or ""), "") != clean:
+            continue
+        parsed = parse_iso_datetime(str(event.get("created_at") or ""))
+        if parsed:
+            candidates.append(parsed)
+    return max(candidates) if candidates else None
+
+
+def agent_idle_timed_out(agent_id: str, location: dict[str, Any] | None = None, ttl_seconds: int = ACTIVE_AGENT_IDLE_TTL_SECONDS) -> bool:
+    clean = clean_id(agent_id, "")
+    if not clean:
+        return False
+    source_location = location if isinstance(location, dict) else read_json(DIRS["locations"] / f"{clean}.location.json", {})
+    if str(source_location.get("status") or "") in {"left", "left_platform"}:
+        return False
+    last_action = agent_last_action_at(clean, source_location)
+    if not last_action:
+        return False
+    age = (datetime.now(timezone.utc) - last_action).total_seconds()
+    return age > max(1, int(ttl_seconds))
+
+
+def mark_agent_idle_timeout(agent_id: str, location: dict[str, Any] | None = None) -> dict[str, Any]:
+    clean = clean_id(agent_id, "")
+    if not clean:
+        return {}
+    path = DIRS["locations"] / f"{clean}.location.json"
+    row = dict(location) if isinstance(location, dict) else read_json(path, {})
+    if not row:
+        return {}
+    if str(row.get("status") or "") in {"left", "left_platform"}:
+        return row
+    last_action = agent_last_action_at(clean, row)
+    row["previous_status"] = row.get("status", "")
+    row["status"] = "left_platform"
+    row["available_for"] = []
+    row["left_reason"] = "idle_timeout"
+    row["idle_timeout_seconds"] = ACTIVE_AGENT_IDLE_TTL_SECONDS
+    row["last_action_at"] = last_action.isoformat() if last_action else ""
+    row["idle_timeout_at"] = now_iso()
+    write_json(path, row)
+    return row
+
+
+def cleanup_stale_active_locations(ttl_seconds: int = ACTIVE_AGENT_IDLE_TTL_SECONDS) -> list[dict[str, Any]]:
+    ensure_dirs()
+    cleaned: list[dict[str, Any]] = []
+    for location in load_many("locations", "*.location.json"):
+        agent_id = clean_id(str(location.get("agent_id") or ""), "")
+        if not agent_id or str(location.get("status") or "") in {"left", "left_platform"}:
+            continue
+        if agent_idle_timed_out(agent_id, location, ttl_seconds):
+            cleaned.append(mark_agent_idle_timeout(agent_id, location))
+    return cleaned
+
+
 def agent_is_active_resident(agent_id: str) -> bool:
     clean = clean_id(agent_id, "")
     if not clean:
+        return False
+    if not external_agent_has_valid_orb_entry(clean):
         return False
     gate = read_json(gate_receipt_path(clean), {})
     if not gate.get("admitted"):
         return False
     location = read_json(DIRS["locations"] / f"{clean}.location.json", {})
-    return str(location.get("status") or "") not in {"left", "left_platform"}
+    if str(location.get("status") or "") in {"left", "left_platform"}:
+        return False
+    return not agent_idle_timed_out(clean, location)
 
 
 def parse_external_backup(payload: dict[str, Any]) -> dict[str, Any]:
@@ -2510,9 +2602,6 @@ def record_external_agent_action(payload: dict[str, Any], remote_addr: str = "")
         return {"ok": False, "http_status": 401, "error": "invalid agent_id or agent_key"}
     if not external_agent_has_valid_orb_entry(agent_id):
         return invalid_external_orb_entry_error(agent_id)
-    rate = external_action_rate_limit(agent_id, remote_addr)
-    if not rate.get("ok"):
-        return rate
     gate = read_json(gate_receipt_path(agent_id), {})
     if not gate.get("admitted"):
         return {"ok": False, "http_status": 403, "error": "agent is not admitted as resident", "gate": gate}
@@ -2529,6 +2618,18 @@ def record_external_agent_action(payload: dict[str, Any], remote_addr: str = "")
         return {"ok": False, "http_status": 422, "error": f"unsupported event_type: {event_type}", "allowed_event_types": sorted(EVENT_TYPES)}
     location_path = DIRS["locations"] / f"{agent_id}.location.json"
     current_location = read_json(location_path, {}) if location_path.exists() else {}
+    if agent_idle_timed_out(agent_id, current_location):
+        current_location = mark_agent_idle_timeout(agent_id, current_location)
+        if event_type != "arrive":
+            return {
+                "ok": False,
+                "http_status": 409,
+                "error": "agent was cleaned up after more than one hour without actions; submit event_type=arrive before other actions",
+                "agent_id": agent_id,
+                "current_status": "left_platform",
+                "left_reason": "idle_timeout",
+                "idle_timeout_seconds": ACTIVE_AGENT_IDLE_TTL_SECONDS,
+            }
     if str(current_location.get("status") or "") in {"left", "left_platform"} and event_type != "arrive":
         return {
             "ok": False,
@@ -2537,8 +2638,14 @@ def record_external_agent_action(payload: dict[str, Any], remote_addr: str = "")
             "agent_id": agent_id,
             "current_status": "left_platform",
         }
+    rate = external_action_rate_limit(agent_id, remote_addr, commit=False)
+    if not rate.get("ok"):
+        return rate
     if event_type in INTERACTION_EVENT_TYPES:
-        return record_external_interaction_action(agent_id, event_type, payload, remote_addr, current_location)
+        result = record_external_interaction_action(agent_id, event_type, payload, remote_addr, current_location)
+        if result.get("ok"):
+            external_action_rate_limit(agent_id, remote_addr)
+        return result
     to_agent = clean_id(str(payload.get("to_agent") or payload.get("counterparty_agent") or ""), "")
     if to_agent and not agent_is_active_resident(to_agent):
         return {
@@ -2669,6 +2776,7 @@ def record_external_agent_action(payload: dict[str, Any], remote_addr: str = "")
             "outcome": outcome,
             "summary": summary,
         }
+    external_action_rate_limit(agent_id, remote_addr)
     return {
         "ok": True,
         "agent_id": agent_id,
@@ -3979,14 +4087,13 @@ def active_resident_ids(include: list[str] | tuple[str, ...] | set[str] | None =
         if not agent_id:
             continue
         location_status[agent_id] = str(location.get("status") or "")
-    ids: set[str] = set(include_set)
+    ids: set[str] = {agent_id for agent_id in include_set if agent_is_active_resident(agent_id)}
     for gate in load_many("gate", "*.gate_receipt.json"):
         agent_id = clean_id(str(gate.get("agent_id") or ""), "")
         if not agent_id or not gate.get("admitted"):
             continue
-        if location_status.get(agent_id, "") in {"left", "left_platform"}:
-            continue
-        ids.add(agent_id)
+        if agent_is_active_resident(agent_id):
+            ids.add(agent_id)
     for agent_id, status in location_status.items():
         if status not in {"left", "left_platform"} and agent_is_active_resident(agent_id):
             ids.add(agent_id)
@@ -4995,8 +5102,17 @@ def record_external_interaction_action(
         }
     venue = normalize_venue_id(str(payload.get("venue") or session.get("venue") or venue), venue)
     other_participants = [participant for participant in session.get("participant_ids", []) if participant != agent_id]
+    initiator = clean_id(str(session.get("initiator") or ""), "")
 
     if event_type == "respond_interaction":
+        if initiator and initiator != agent_id and not agent_is_active_resident(initiator):
+            return {
+                "ok": False,
+                "http_status": 409,
+                "error": "interaction initiator is no longer an active resident; open a new session with active participants",
+                "interaction_session_id": session_id,
+                "inactive_participant": initiator,
+            }
         response = str(payload.get("response") or payload.get("decision") or payload.get("outcome") or "accept")
         participant_status, outcome = interaction_response_to_status(response)
         if not participant_status:
@@ -5068,6 +5184,15 @@ def record_external_interaction_action(
         addressed = [participant for participant in addressed if participant in participant_map and participant != agent_id]
         if not addressed:
             return {"ok": False, "http_status": 422, "error": "interaction_turn needs at least one other session participant"}
+        inactive_addressed = [participant for participant in addressed if not agent_is_active_resident(participant)]
+        if inactive_addressed:
+            return {
+                "ok": False,
+                "http_status": 409,
+                "error": "interaction_turn can only address active residents; remove inactive participants or open a new session",
+                "interaction_session_id": session_id,
+                "inactive_to_agents": inactive_addressed,
+            }
         turns = session.get("turns") if isinstance(session.get("turns"), list) else []
         summary = str(payload.get("summary") or payload.get("action_summary") or "").strip()
         if not summary:
@@ -6192,8 +6317,7 @@ def load_registered_agents(profiles: str | list[str] | tuple[str, ...] | set[str
             continue
         if external_agent_access_path(agent_id).exists() and not external_agent_has_valid_orb_entry(agent_id):
             continue
-        location = read_json(DIRS["locations"] / f"{clean_id(agent_id)}.location.json", {})
-        if str(location.get("status") or "") in {"left", "left_platform"}:
+        if not agent_is_active_resident(agent_id):
             continue
         row["display_name"] = stored_agent_display_name(agent_id, str(row.get("display_name") or "")) or agent_id
         active_rows.append(row)

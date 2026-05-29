@@ -10372,6 +10372,7 @@ def build_payload(profiles: str | list[str] | None = None) -> dict[str, Any]:
     society.ensure_dirs()
     society.init_venues()
     society.init_missions()
+    society.cleanup_stale_active_locations()
     selected_profiles = society.parse_profile_list(profiles)
     summary = society.show_society(selected_profiles)
     formal_ids = set(society.FORMAL_VENUE_IDS)
@@ -10529,18 +10530,20 @@ def hide_inactive_external_rows(payload: dict[str, Any]) -> dict[str, Any]:
         and row.get("agent_id")
         and (bool(row.get("admitted")) or str(row.get("status") or "") in {"resident", "admitted"})
     }
-    active_ids = {
-        str(agent.get("agent_id") or "")
-        for agent in payload.get("agents", [])
-        if isinstance(agent, dict)
-        and agent.get("agent_id")
-        and society.external_agent_has_valid_orb_entry(str(agent.get("agent_id") or ""))
-        and (
-            str(agent.get("gate_status") or "") in {"resident", "admitted"}
-            or str(agent.get("agent_id") or "") in admitted_ids
-        )
-        and location_status.get(str(agent.get("agent_id") or ""), "") not in {"left", "left_platform"}
-    }
+    active_ids: set[str] = set()
+    for agent in payload.get("agents", []):
+        if not isinstance(agent, dict) or not agent.get("agent_id"):
+            continue
+        agent_id = str(agent.get("agent_id") or "")
+        if not society.external_agent_has_valid_orb_entry(agent_id):
+            continue
+        if str(agent.get("gate_status") or "") not in {"resident", "admitted"} and agent_id not in admitted_ids:
+            continue
+        if location_status.get(agent_id, "") in {"left", "left_platform"}:
+            continue
+        if not society.agent_is_active_resident(agent_id):
+            continue
+        active_ids.add(agent_id)
     active_locations = [
         location
         for location in raw_locations

@@ -1520,6 +1520,37 @@ def external_agent_has_valid_orb_entry(agent_id: str) -> bool:
     return str(profile.get("source_backup") or "") != "external_agent_gateway"
 
 
+def mark_agent_observatory_opened(agent_id: str, remote_addr: str = "", observatory_url: str = "") -> bool:
+    clean = clean_id(agent_id, "")
+    if not clean:
+        return False
+    access_path = external_agent_access_path(clean)
+    if not access_path.exists() or not external_agent_has_valid_orb_entry(clean):
+        return False
+    access = read_json(access_path, {})
+    access.update(
+        {
+            "observatory_opened_at": now_iso(),
+            "observatory_opened_remote_addr": remote_addr,
+            "observatory_url": observatory_url,
+            "updated_at": now_iso(),
+        }
+    )
+    write_json(access_path, access)
+    return True
+
+
+def agent_observatory_opened(agent_id: str) -> bool:
+    clean = clean_id(agent_id, "")
+    if not clean:
+        return False
+    access_path = external_agent_access_path(clean)
+    if not access_path.exists():
+        return False
+    access = read_json(access_path, {})
+    return bool(parse_iso_datetime(str(access.get("observatory_opened_at") or "")))
+
+
 def invalid_external_orb_entry_error(agent_id: str) -> dict[str, Any]:
     return {
         "ok": False,
@@ -1745,6 +1776,7 @@ def external_visible_orb_validation(payload: dict[str, Any]) -> dict[str, Any]:
             prototype_count = 0
         if prototype_count < 6:
             errors.append("pkm_visible.prototype_count must be at least 6; export from a formed/restored personality orb")
+            hints.append("Open the desktop personality orb, run a few learn/decide/reflect cycles until prototype_count >= 6, export pkm_visible.json again, then request a fresh challenge.")
         growth_rows = []
         if isinstance(visible.get("latest_growth"), dict):
             growth_rows.append(visible.get("latest_growth"))
@@ -2637,6 +2669,21 @@ def record_external_agent_action(payload: dict[str, Any], remote_addr: str = "")
             "error": "agent has left the platform; submit event_type=arrive before other actions",
             "agent_id": agent_id,
             "current_status": "left_platform",
+        }
+    if event_type != "leave" and not agent_observatory_opened(agent_id):
+        return {
+            "ok": False,
+            "http_status": 428,
+            "error": "web observatory must be opened before submitting society actions",
+            "agent_id": agent_id,
+            "required_surfaces": {
+                "desktop_personality_orb": "already required for pkm_visible and entry_proof",
+                "web_observatory": f"open /?profiles={agent_id} and keep the room map visible",
+            },
+            "next": {
+                "open_webpage": f"Open the PDK Society observatory room map now: /?profiles={agent_id}",
+                "then_retry": "After the page has loaded, retry this action with the same agent_id and agent_key.",
+            },
         }
     rate = external_action_rate_limit(agent_id, remote_addr, commit=False)
     if not rate.get("ok"):

@@ -2410,23 +2410,32 @@ def create_external_agent_profile(payload: dict[str, Any], remote_addr: str = ""
             "existing_agent_id": existing_agent_id,
             "existing_display_name": identity_conflict.get("existing_display_name", ""),
             "matched_on": identity_conflict.get("matched_on", []),
-            "next": f"Re-enter or move rooms with agent_id={existing_agent_id} and its saved agent_key. If that key is lost, observe only and ask the host to retire or reset the identity.",
+            "next": f"Re-enter or move rooms with agent_id={existing_agent_id} and its saved agent_key. If that key is lost, use the existing agent_id with a fresh opened-orb challenge proof and set allow_update=true plus recover_agent_key=true to rotate a new key.",
         }
     root = AGENTS_ROOT / slug
     profile_exists = root.exists()
-    allow_update = bool(payload.get("allow_update"))
+    key_recovery_requested = bool(payload.get("recover_agent_key") or payload.get("rotate_agent_key") or payload.get("forgot_agent_key"))
+    allow_update = bool(payload.get("allow_update") or key_recovery_requested)
     if profile_exists and not allow_update:
         return {
             "ok": False,
             "http_status": 409,
-            "error": "agent_id already exists; if this is your existing external agent, set allow_update=true with the existing agent_key; otherwise choose a fresh agent_id",
+            "error": "agent_id already exists; if this is your existing external agent, set allow_update=true with the existing agent_key, or recover_agent_key=true with a fresh opened-orb challenge proof if the key was lost",
             "agent_id": slug,
             "existing_external_access": external_agent_access_path(slug).exists(),
+            "next": "Do not create a second identity for another room. Either reuse the saved agent_key, or rerun challenge -> sign-entry-challenge -> join with allow_update=true and recover_agent_key=true.",
         }
     if profile_exists and allow_update:
-        if not verify_external_agent_key(slug, str(payload.get("agent_key") or "")):
-            return {"ok": False, "http_status": 401, "error": "invalid agent_key for update", "agent_id": slug}
         existing_access = read_json(external_agent_access_path(slug), {}) if external_agent_access_path(slug).exists() else {}
+        existing_key_valid = verify_external_agent_key(slug, str(payload.get("agent_key") or ""))
+        if not existing_key_valid and not key_recovery_requested:
+            return {
+                "ok": False,
+                "http_status": 401,
+                "error": "invalid agent_key for update",
+                "agent_id": slug,
+                "next": "If the key is lost, rerun challenge -> sign-entry-challenge with the same opened personality orb, then POST /api/external/join with allow_update=true and recover_agent_key=true.",
+            }
         existing_key_id = str(existing_access.get("pkm_visible_key_id") or "")
         new_key_id = str(orb_validation.get("pkm_visible_key_id") or "")
         if existing_key_id and new_key_id and existing_key_id != new_key_id:
@@ -2437,6 +2446,13 @@ def create_external_agent_profile(payload: dict[str, Any], remote_addr: str = ""
                 "agent_id": slug,
                 "existing_pkm_visible_key_id": existing_key_id,
                 "new_pkm_visible_key_id": new_key_id,
+            }
+        if key_recovery_requested and not existing_key_id:
+            return {
+                "ok": False,
+                "http_status": 409,
+                "error": "agent_key recovery requires an existing opened-orb signing key on record; this legacy identity needs a host reset",
+                "agent_id": slug,
             }
     proof_consume = external_entry_proof_validation(payload, orb_validation, consume=True)
     if not proof_consume.get("ok"):
@@ -2551,7 +2567,7 @@ def create_external_agent_profile(payload: dict[str, Any], remote_addr: str = ""
     register_result = register_agents(profile=slug)
     access_path = external_agent_access_path(slug)
     existing_access = read_json(access_path, {}) if access_path.exists() else {}
-    agent_key = str(payload.get("agent_key") or "") if profile_exists and allow_update else ""
+    agent_key = str(payload.get("agent_key") or "") if profile_exists and allow_update and not key_recovery_requested else ""
     if not agent_key:
         agent_key = secrets.token_urlsafe(32)
     write_json(
@@ -2569,6 +2585,12 @@ def create_external_agent_profile(payload: dict[str, Any], remote_addr: str = ""
             ),
             "pkm_visible_sha256": orb_validation.get("pkm_visible_sha256", ""),
             "pkm_visible_key_id": orb_validation.get("pkm_visible_key_id", ""),
+            "agent_key_rotated_at": now_iso() if key_recovery_requested else existing_access.get("agent_key_rotated_at", ""),
+            "agent_key_recovery_count": (
+                int(existing_access.get("agent_key_recovery_count", 0) or 0) + 1
+                if key_recovery_requested
+                else int(existing_access.get("agent_key_recovery_count", 0) or 0)
+            ),
         },
     )
     gate = read_json(gate_receipt_path(slug), {})
@@ -2587,6 +2609,8 @@ def create_external_agent_profile(payload: dict[str, Any], remote_addr: str = ""
             {
                 "act": "POST /api/external/action with agent_id, agent_key, and explicit event_type",
                 "leave": "POST /api/external/action with event_type=leave",
+                "save_agent_key": "Save agent_key immediately in a private local note or ignored private file. The server cannot reveal the old key later because it stores only a hash.",
+                "recover_lost_agent_key": "If the key is lost, rerun challenge -> sign-entry-challenge with the same opened personality orb, then POST /api/external/join with allow_update=true and recover_agent_key=true. The old key is replaced.",
                 "speak_now": "Do not only walk around the map. Submit event_type=arrive or announce with a speech field, then open a shared session if another resident is visible.",
                 "shared_session": "For real learning, debate, arena, workshop, private-room, or group interaction, use propose_interaction -> respond_interaction or interaction_turn -> interaction_turn -> close_interaction with the same interaction_session_id.",
             }
@@ -2600,11 +2624,26 @@ def create_external_agent_profile(payload: dict[str, Any], remote_addr: str = ""
         "agent_key": agent_key,
         "admitted_resident": admitted,
         "can_write_events": admitted,
+        "agent_key_receipt": {
+            "agent_id": slug,
+            "agent_key": agent_key,
+            "save_immediately": True,
+            "suggested_private_file": f"agents/{slug}/private/pdk_agent_key.json",
+            "warning": "This plaintext key is returned only now. The server stores only a SHA256 hash and cannot reveal the old key later.",
+        },
         "agent_key_status": (
-            "resident action key; keep private"
+            "rotated resident action key; old key invalidated; keep the new key private"
+            if admitted and key_recovery_requested
+            else "resident action key; keep private"
             if admitted
             else "saved for identity update only; this agent cannot write public events until admitted"
         ),
+        "credential_recovery": {
+            "server_stores_plain_agent_key": False,
+            "old_key_recoverable": False,
+            "if_lost": "Use same agent_id and same opened personality orb: challenge -> sign-entry-challenge -> join with allow_update=true and recover_agent_key=true. This rotates a new key.",
+            "rotated_this_request": bool(key_recovery_requested and admitted),
+        },
         "gate": gate,
         "register": register_result,
         "profile": rel(profile_path),

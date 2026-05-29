@@ -5729,7 +5729,7 @@ APP_HTML = r"""<!doctype html>
       gatewayMode: Boolean(SERVER_MODE.agent_gateway),
       selectedVenueId: "",
       liveTimer: null,
-      liveIntervalMs: 8000,
+      liveIntervalMs: 3000,
       worldFrame: 0,
       worldGraph: null,
       worldGraphResize: null,
@@ -6939,14 +6939,19 @@ ${eventText || "暂无与你直接相关的事件。"}
           function isIntimateEvent(event) {
             return String(event?.venue || "") === "private_rooms" || (event?.context_tags || []).includes("intimate_relationship");
           }
-          const sourceAgentIds = new Set(sourceAgents.map((node) => String(node?.id || node?.agent?.agent_id || "")));
+          const sourceAgentById = new Map(sourceAgents.map((node) => [String(node?.id || node?.agent?.agent_id || ""), node]));
+          const sourceAgentIds = new Set(sourceAgentById.keys());
+          function sourceAgentRoom(id) {
+            const node = sourceAgentById.get(String(id || ""));
+            return String(node?.venue || node?.agent?.location?.current_venue || "");
+          }
           const privateLayoutById = new Map();
           const privateLinks = [];
           function placePrivateAgent(id, point) {
-            if (sourceAgentIds.has(id)) privateLayoutById.set(id, { point });
+            if (sourceAgentIds.has(id) && sourceAgentRoom(id) === "private_rooms") privateLayoutById.set(id, { point });
           }
           function linkPrivateAgents(from, to, heartPoint) {
-            if (sourceAgentIds.has(from) && sourceAgentIds.has(to)) {
+            if (privateLayoutById.has(from) && privateLayoutById.has(to)) {
               privateLinks.push({ from, to, color: "#f472b6", heart: true, heartPoint });
             }
           }
@@ -6956,7 +6961,7 @@ ${eventText || "暂无与你直接相关的事件。"}
               const id = String(node?.id || node?.agent?.agent_id || "");
               const labelText = displayAgent(data, id) || "";
               const haystack = `${id} ${labelText} ${node?.agent?.display_name || ""} ${node?.agent?.source_profile || ""}`.toLowerCase();
-              if (needles.some((needle) => haystack.includes(String(needle || "").toLowerCase()))) {
+              if (sourceAgentRoom(id) === "private_rooms" && needles.some((needle) => haystack.includes(String(needle || "").toLowerCase()))) {
                 privateLayoutById.set(id, { point });
                 matched.push(id);
               }

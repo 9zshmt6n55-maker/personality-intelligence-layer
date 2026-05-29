@@ -4222,6 +4222,7 @@ APP_HTML = r"""<!doctype html>
     }
 
     .force-layout.reference-copy {
+      position: relative;
       grid-template-columns: 306px 950px 390px;
       grid-template-rows: 62px 680px 180px;
       grid-template-areas:
@@ -4438,8 +4439,10 @@ APP_HTML = r"""<!doctype html>
 
     .ref-room-badge {
       justify-self: end;
-      min-width: 24px;
+      min-width: 42px;
       height: 24px;
+      width: auto;
+      padding: 0 7px;
       display: grid;
       place-items: center;
       border: 1px solid color-mix(in srgb, var(--room-color, #38bdf8), #ffffff 28%);
@@ -4448,6 +4451,8 @@ APP_HTML = r"""<!doctype html>
       color: #fff7ed;
       font-size: 12px;
       font-weight: 900;
+      line-height: 1;
+      white-space: nowrap;
       box-shadow: 0 0 9px color-mix(in srgb, var(--room-color, #38bdf8), transparent 50%);
     }
 
@@ -4840,6 +4845,10 @@ APP_HTML = r"""<!doctype html>
       display: grid;
       gap: 8px;
       margin-top: 10px;
+      max-height: 154px;
+      min-height: 0;
+      overflow-y: auto;
+      padding-right: 4px;
     }
 
     .ref-mini-btn {
@@ -4852,6 +4861,88 @@ APP_HTML = r"""<!doctype html>
       color: #dbeafe;
       padding: 0 8px;
       font-size: 12px;
+      cursor: pointer;
+    }
+
+    .force-event-drawer {
+      position: absolute;
+      z-index: 40;
+      left: 326px;
+      right: 410px;
+      top: 76px;
+      bottom: 28px;
+      display: none;
+      place-items: stretch;
+      padding: 14px;
+      border: 1px solid rgba(125, 211, 252, 0.34);
+      border-radius: 4px;
+      background: rgba(2, 6, 23, 0.86);
+      box-shadow: 0 24px 80px rgba(2, 6, 23, 0.62), inset 0 0 0 1px rgba(2, 6, 23, 0.86);
+      backdrop-filter: blur(5px);
+    }
+
+    .force-event-drawer.is-open {
+      display: grid;
+    }
+
+    .force-event-drawer-panel {
+      min-height: 0;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      border: 1px solid rgba(77, 208, 255, 0.30);
+      background:
+        linear-gradient(90deg, rgba(77, 208, 255, 0.08) 1px, transparent 1px),
+        linear-gradient(180deg, rgba(77, 208, 255, 0.08) 1px, transparent 1px),
+        rgba(6, 17, 35, 0.96);
+      background-size: 22px 22px;
+    }
+
+    .force-event-drawer-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 14px;
+      border-bottom: 1px solid rgba(77, 208, 255, 0.24);
+    }
+
+    .force-event-drawer-head h3 {
+      margin: 0;
+      color: #dff6ff;
+    }
+
+    .force-event-drawer-list {
+      min-height: 0;
+      overflow-y: auto;
+      display: grid;
+      align-content: start;
+      gap: 8px;
+      padding: 12px 14px 16px;
+    }
+
+    .force-event-drawer-row {
+      display: grid;
+      grid-template-columns: 58px minmax(0, 1fr);
+      gap: 12px;
+      align-items: start;
+      padding: 8px 10px;
+      border: 1px solid rgba(77, 208, 255, 0.16);
+      background: rgba(2, 6, 23, 0.56);
+      color: #dbeafe;
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    .force-event-drawer-time {
+      color: #86efac;
+      font-weight: 900;
+      white-space: nowrap;
+    }
+
+    .force-event-drawer-copy {
+      min-width: 0;
+      color: var(--dot, #38bdf8);
+      font-weight: 800;
     }
 
     .event-timeline-row {
@@ -5014,6 +5105,8 @@ APP_HTML = r"""<!doctype html>
     .reference-copy .force-log-grid {
       gap: 8px;
       max-height: 128px;
+      overflow-y: auto;
+      padding-right: 4px;
     }
 
     .reference-copy .pixel-event.ref-event-row {
@@ -5062,6 +5155,52 @@ APP_HTML = r"""<!doctype html>
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+      text-align: left;
+    }
+
+    .ref-broadcast-grid {
+      display: grid;
+      gap: 8px;
+      max-height: 128px;
+      min-height: 0;
+      overflow-y: auto;
+      padding-right: 4px;
+    }
+
+    .ref-broadcast-row {
+      display: grid;
+      grid-template-columns: 84px minmax(0, 1fr) 42px;
+      gap: 10px;
+      align-items: start;
+      padding: 4px 0;
+      color: #dff6ff;
+      font-size: 12px;
+      line-height: 1.28;
+    }
+
+    .ref-broadcast-speaker,
+    .ref-broadcast-time {
+      color: #86efac;
+      font-weight: 900;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .ref-broadcast-time {
+      color: #7dd3fc;
+      text-align: right;
+    }
+
+    .ref-broadcast-text {
+      min-width: 0;
+      color: var(--broadcast-color, #f472b6);
+      font-weight: 800;
+      white-space: normal;
+      overflow: hidden;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
       text-align: left;
     }
 
@@ -6811,9 +6950,29 @@ ${eventText || "暂无与你直接相关的事件。"}
               privateLinks.push({ from, to, color: "#f472b6", heart: true, heartPoint });
             }
           }
+          function matchedPrivateAgentIds(needles, point) {
+            const matched = [];
+            sourceAgents.forEach((node) => {
+              const id = String(node?.id || node?.agent?.agent_id || "");
+              const labelText = displayAgent(data, id) || "";
+              const haystack = `${id} ${labelText} ${node?.agent?.display_name || ""} ${node?.agent?.source_profile || ""}`.toLowerCase();
+              if (needles.some((needle) => haystack.includes(String(needle || "").toLowerCase()))) {
+                privateLayoutById.set(id, { point });
+                matched.push(id);
+              }
+            });
+            return matched;
+          }
           placePrivateAgent("benben", [15.2, 20.0]);
           placePrivateAgent("dongdong_v2", [20.8, 20.0]);
           linkPrivateAgents("benben", "dongdong_v2", [18.0, 17.6]);
+          const benbenPrivateIds = matchedPrivateAgentIds(["benben", "pkm_agent_001", "笨笨"], [15.2, 20.0]);
+          const dongdongPrivateIds = matchedPrivateAgentIds(["dongdong", "dongdong_slave_001", "洞洞"], [20.8, 20.0]);
+          benbenPrivateIds.forEach((from) => {
+            dongdongPrivateIds.forEach((to) => {
+              if (from !== to) linkPrivateAgents(from, to, [18.0, 17.6]);
+            });
+          });
           placePrivateAgent("yaoyao", [14.6, 30.4]);
           placePrivateAgent("niaoniao", [20.0, 30.4]);
           placePrivateAgent("yueyue", [25.4, 30.4]);
@@ -8673,6 +8832,61 @@ ${eventText || "暂无与你直接相关的事件。"}
         });
       });
       const maxAttention = Math.max(1, ...Array.from(attention.values()));
+      const knownVenueIds = new Set([
+        "private_rooms",
+        "learning_rooms",
+        "debate_arena",
+        "workshop",
+        "task_board",
+        "skill_market",
+        "mediation_court",
+        "arena",
+        ...(data.venues || []).map((venue) => String(venue.venue_id || "")).filter(Boolean)
+      ]);
+      const locationByAgent = new Map((data.locations || []).map((row) => [String(row.agent_id || ""), row]));
+      function knownVenueId(value) {
+        const venue = String(value || "").trim();
+        return knownVenueIds.has(venue) ? venue : "";
+      }
+      function activeSessionVenueForAgent(agentId) {
+        const id = String(agentId || "");
+        if (!id) return "";
+        for (const session of data.interaction_sessions || []) {
+          const status = String(session?.status || "");
+          if (status && status !== "active") continue;
+          const rawParticipants = session?.participant_ids;
+          const participants = Array.isArray(rawParticipants)
+            ? rawParticipants.map((item) => String(item || ""))
+            : String(rawParticipants || "").split(/[\s,]+/).filter(Boolean);
+          if (!participants.includes(id)) continue;
+          const byAgent = session?.co_presence?.venues_by_agent || {};
+          const coVenue = knownVenueId(byAgent[id]);
+          if (coVenue) return coVenue;
+          const sessionVenue = knownVenueId(session?.venue);
+          if (sessionVenue) return sessionVenue;
+        }
+        return "";
+      }
+      function recentEventVenueForAgent(agentId) {
+        const id = String(agentId || "");
+        if (!id) return "";
+        for (const event of recentEventsAll) {
+          if (String(event?.from_agent || "") !== id && String(event?.to_agent || "") !== id) continue;
+          const venue = knownVenueId(event?.venue);
+          if (venue) return venue;
+        }
+        return "";
+      }
+      function resolvedAgentVenueFor(agentId, agent, nodeVenue = "", fallback = "task_board") {
+        const id = String(agentId || agent?.agent_id || "");
+        return knownVenueId(nodeVenue)
+          || knownVenueId(agent?.location?.current_venue)
+          || knownVenueId(locationByAgent.get(id)?.current_venue)
+          || activeSessionVenueForAgent(id)
+          || recentEventVenueForAgent(id)
+          || knownVenueId(fallback)
+          || "task_board";
+      }
 
       const venueNodes = (data.venues || []).map((venue, index, arr) => {
         const angle = -Math.PI / 2 + (Math.PI * 2 * index) / Math.max(1, arr.length);
@@ -8716,7 +8930,7 @@ ${eventText || "暂无与你直接相关的事件。"}
           heatRatio,
           stage,
           skillCount: Number(agent.skill_count || 0),
-          venue: agent.location?.current_venue || ""
+          venue: resolvedAgentVenueFor(id, agent, "", "task_board")
         };
         nodeById.set(id, node);
         return node;
@@ -8949,9 +9163,19 @@ ${eventText || "暂无与你直接相关的事件。"}
         mediation_court: "#60a5fa",
         arena: "#ef4444"
       };
+      const rosterRoomShort = {
+        private_rooms: tx("亲密", "Private"),
+        learning_rooms: tx("学习", "Learn"),
+        debate_arena: tx("辩论", "Debate"),
+        workshop: tx("工作", "Work"),
+        task_board: tx("任务", "Task"),
+        skill_market: tx("技能", "Skill"),
+        mediation_court: tx("调解", "Court"),
+        arena: tx("竞技", "Arena")
+      };
       const rosterFallbackRooms = ["private_rooms", "learning_rooms", "debate_arena", "workshop", "task_board", "skill_market", "mediation_court", "arena"];
       const agentRoster = agentNodes.slice(0, 8).map((node, index) => {
-        const room = rosterRoomNo[node?.venue] ? node.venue : rosterFallbackRooms[index % rosterFallbackRooms.length];
+        const room = resolvedAgentVenueFor(node?.id || "", node?.agent || {}, node?.venue || "", rosterFallbackRooms[index % rosterFallbackRooms.length]);
         const statusColor = Number(node?.heat || 0) > 0 ? "#a78bfa" : "#22c55e";
         const status = Number(node?.heat || 0) > 0 ? "互动中" : "在线";
         const color = rosterRoomColor[room] || rosterColors[index % rosterColors.length];
@@ -8959,7 +9183,7 @@ ${eventText || "暂无与你直接相关的事件。"}
         return `<button class="agent-roster-item ref-roster-row" type="button" data-world-focus-agent="${esc(node?.id || "")}" style="--row-color:${color}; --agent-color:${color}; --agent-status:${statusColor}; --status-color:${statusColor}; --room-color:${color}">
           <span class="ref-roster-avatar">${miniAgentSvg(node?.agent || {})}</span>
           <span class="ref-roster-main"><span class="ref-roster-name">${esc(name)}</span><span class="ref-roster-status">${esc(status)}</span></span>
-          <span class="ref-room-badge">${esc(rosterRoomNo[room] || "")}</span>
+          <span class="ref-room-badge" title="${esc(venueIdName(room) || room)}">${esc(rosterRoomShort[room] || rosterRoomNo[room] || "")}</span>
         </button>`;
       }).join("") + (agentNodes.length > 8 ? '<div class="ref-roster-more">...</div>' : "");
       function refEventTime(event, index) {
@@ -8983,6 +9207,26 @@ ${eventText || "暂无与你直接相关的事件。"}
       }
       const allRefEvents = data.events || [];
       const refEvents = allRefEvents.slice(0, 6);
+      function refBroadcastSpeech(item) {
+        return String(item?.speech_text || item?.public_broadcast_text || "").trim();
+      }
+      const refBroadcasts = (data.society_broadcasts || [])
+        .filter((item) => refBroadcastSpeech(item) || String(item?.behavior_summary || item?.summary || "").trim())
+        .slice(0, 12);
+      const broadcastLog = refBroadcasts.slice(0, 5).map((item, index) => {
+        const actor = displayAgent(data, item?.from_agent || "") || `Agent-${String(index + 1).padStart(2, "0")}`;
+        const target = item?.to_agent ? displayAgent(data, item.to_agent) : "";
+        const pair = target ? `${actor} -> ${target}` : actor;
+        const speech = refBroadcastSpeech(item);
+        const fallback = String(item?.behavior_summary || item?.summary || "").trim();
+        const text = speech || fallback;
+        const color = eventColor(item?.event_type || "") || ["#f472b6", "#60a5fa", "#86efac", "#fb923c", "#a78bfa"][index % 5];
+        return `<div class="ref-broadcast-row" style="--broadcast-color:${color}">
+          <span class="ref-broadcast-speaker">${esc(pair)}</span>
+          <span class="ref-broadcast-text">${speech ? `“${esc(text)}”` : esc(text)}</span>
+          <span class="ref-broadcast-time">${esc(refEventTime(item, index))}</span>
+        </div>`;
+      }).join("");
       const eventLog = refEvents.slice(0, 5).map((event, index) => {
         const color = eventColor(event.type || "") || ["#86efac", "#f472b6", "#a78bfa", "#38bdf8", "#fb923c"][index % 5];
         return `<div class="pixel-event ref-event-row" style="--event-color:${color}">
@@ -9064,6 +9308,14 @@ ${eventText || "暂无与你直接相关的事件。"}
         const color = eventColor(event.type || "") || colors[index % colors.length];
         return `<div class="event-timeline-row rich" style="--dot:${color}"><span>${esc(refEventTime(event, index))}</span><span class="event-text">${esc(refEventCopy(event, index))}</span></div>`;
       }).join("") || '<div class="pixel-event">暂无事件。</div>';
+      const eventDrawerRows = allRefEvents.map((event, index) => {
+        const colors = ["#f472b6", "#60a5fa", "#86efac", "#fb923c", "#a78bfa", "#38bdf8"];
+        const color = eventColor(event.type || "") || colors[index % colors.length];
+        return `<div class="force-event-drawer-row" style="--dot:${color}">
+          <span class="force-event-drawer-time">${esc(refEventTime(event, index))}</span>
+          <span class="force-event-drawer-copy">${esc(refEventCopy(event, index))}</span>
+        </div>`;
+      }).join("") || '<div class="force-event-drawer-row"><span class="force-event-drawer-time">--:--</span><span class="force-event-drawer-copy">暂无事件。</span></div>';
       const todayOverview = [
         [Math.min(999, allRefEvents.length), "今日互动", "#f472b6"],
         [activeConnectionCount, "活跃连接", "#38bdf8"],
@@ -9133,9 +9385,9 @@ ${eventText || "暂无与你直接相关的事件。"}
               </div>
             </div>
             <div class="ref-log-section">
-              <h3>事件日志</h3>
-              <div class="force-log-grid">
-                ${eventLog || '<div class="pixel-event">暂无事件。</div>'}
+              <h3>公开发言</h3>
+              <div class="ref-broadcast-grid">
+                ${broadcastLog || '<div class="pixel-event">暂无公开发言。</div>'}
               </div>
             </div>
           </div>
@@ -9146,7 +9398,7 @@ ${eventText || "暂无与你直接相关的事件。"}
             <div class="room-heat-list">${heatRank}</div>
           </div>
           <div class="force-card realtime-card">
-            <h3>实时事件 <button class="ref-mini-btn" type="button">查看全部</button></h3>
+            <h3>实时事件 <button class="ref-mini-btn" type="button" data-ref-events-open>查看全部</button></h3>
             <div class="event-timeline">${timelineRows}</div>
           </div>
           <div class="force-card today-card">
@@ -9194,7 +9446,31 @@ ${eventText || "暂无与你直接相关的事件。"}
                 <span><span class="chip-title">${esc(label(event.type))}</span><br><span class="muted">${esc(displayPair(data, event.from_agent || "", event.to_agent || ""))}</span></span>
               </div>`).join("") : '<div class="muted">暂无事件。</div>'}
           </div>
+        </div>
+        <div id="refEventDrawer" class="force-event-drawer" aria-hidden="true">
+          <div class="force-event-drawer-panel" role="dialog" aria-modal="true" aria-label="全部实时事件">
+            <div class="force-event-drawer-head">
+              <h3>全部实时事件</h3>
+              <button class="ref-mini-btn" type="button" data-ref-events-close>关闭</button>
+            </div>
+            <div class="force-event-drawer-list">${eventDrawerRows}</div>
+          </div>
         </div>`;
+      const eventDrawer = host.querySelector("#refEventDrawer");
+      const openEventsButton = host.querySelector("[data-ref-events-open]");
+      const closeEventsButton = host.querySelector("[data-ref-events-close]");
+      const setEventDrawerOpen = (open) => {
+        if (!eventDrawer) return;
+        eventDrawer.classList.toggle("is-open", open);
+        eventDrawer.setAttribute("aria-hidden", open ? "false" : "true");
+      };
+      if (openEventsButton) openEventsButton.addEventListener("click", () => setEventDrawerOpen(true));
+      if (closeEventsButton) closeEventsButton.addEventListener("click", () => setEventDrawerOpen(false));
+      if (eventDrawer) {
+        eventDrawer.addEventListener("click", (event) => {
+          if (event.target === eventDrawer) setEventDrawerOpen(false);
+        });
+      }
       fitForceDashboard();
       const webglPayload = { agentNodes, venueNodes, relations, hotAgentId: hotAgents[0]?.id || "" };
       if (!drawWorld3dGraph($("society3dGraph"), $("society3dCanvas"), data, webglPayload)) {

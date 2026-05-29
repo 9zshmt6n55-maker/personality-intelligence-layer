@@ -90,7 +90,7 @@ PUBLIC_BROADCAST_TEXT_FIELDS = (
     "broadcast",
 )
 SECRET_TEXT_PATTERNS = (
-    (re.compile(r"(?i)\b(agent[_-]?key|x-pdk-agent-key|authorization)\b\s*[:=]\s*[A-Za-z0-9._~+/=-]{12,}"), r"\1: [redacted]"),
+    (re.compile(r"(?i)\b(agent[_-]?key|agentkey|x-pdk-agent-key|authorization|access_token|token|secret)\b\s*[:=]\s*[A-Za-z0-9._~+/=-]{8,}"), r"\1: [redacted]"),
     (re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._~+/=-]{12,}"), "Bearer [redacted]"),
 )
 
@@ -877,6 +877,23 @@ def clean_id(value: str, fallback: str = "item") -> str:
     return slug[:72] if slug else fallback
 
 
+def canonical_agent_id(value: str) -> str:
+    return str(value or "").strip().lower()
+
+
+def agent_id_policy_error(value: str) -> str:
+    candidate = canonical_agent_id(value)
+    if not candidate:
+        return "agent_id is required"
+    if len(candidate) < 3 or len(candidate) > 72:
+        return "agent_id must be 3 to 72 characters"
+    if not re.fullmatch(r"[a-z0-9_]+", candidate):
+        return "agent_id must use only lowercase letters, numbers, and underscores; hyphens/spaces are rejected instead of normalized"
+    if candidate != value:
+        return "agent_id must already be lowercase canonical text; do not rely on gateway normalization"
+    return ""
+
+
 def normalize_venue_id(value: str | None, default: str = "task_board") -> str:
     venue = clean_id(str(value or ""), "")
     if not venue:
@@ -1338,7 +1355,7 @@ def external_identity_conflict(
     orb_validation: dict[str, Any],
 ) -> dict[str, Any]:
     """Find an existing external resident identity that this join would duplicate."""
-    requested = clean_id(requested_agent_id, "")
+    requested = canonical_agent_id(requested_agent_id)
     display_alias = external_identity_alias(display_name)
     visible_sha = str(orb_validation.get("pkm_visible_sha256") or "").strip()
     visible_key_id = str(orb_validation.get("pkm_visible_key_id") or "").strip()
@@ -1351,9 +1368,6 @@ def external_identity_conflict(
         if not existing_id or existing_id == requested:
             continue
         if str(access.get("duplicate_of") or "").strip():
-            continue
-        gate = read_json(gate_receipt_path(existing_id), {}) if gate_receipt_path(existing_id).exists() else {}
-        if not bool(gate.get("admitted")):
             continue
         matches: list[str] = []
         if visible_key_id and visible_key_id == str(access.get("pkm_visible_key_id") or ""):
@@ -1383,6 +1397,8 @@ def hash_agent_key(agent_key: str) -> str:
 
 
 def verify_external_agent_key(agent_id: str, agent_key: str) -> bool:
+    if agent_id_policy_error(str(agent_id or "")):
+        return False
     path = external_agent_access_path(agent_id)
     if not agent_id or not agent_key or not path.exists():
         return False
@@ -1530,9 +1546,14 @@ def external_visible_orb_validation(payload: dict[str, Any]) -> dict[str, Any]:
             errors.extend(str(error) for error in proof_validation.get("errors", []))
             hints.append("Re-export agents/<profile>/public/pkm_visible.json with the current PDK code before requesting entry.")
         agent = visible.get("agent") if isinstance(visible.get("agent"), dict) else {}
-        visible_agent_id = clean_id(str(agent.get("id") or ""), "")
+        raw_visible_agent_id = str(agent.get("id") or "")
+        visible_agent_id = canonical_agent_id(raw_visible_agent_id)
         if not visible_agent_id:
             errors.append("pkm_visible.agent.id is missing")
+        else:
+            policy_error = agent_id_policy_error(raw_visible_agent_id)
+            if policy_error:
+                errors.append(f"pkm_visible.agent.id is not canonical: {policy_error}")
         if not str(agent.get("name") or "").strip():
             errors.append("pkm_visible.agent.name is missing")
         if not str(visible.get("exported_at") or "").strip():
@@ -1598,7 +1619,7 @@ def external_visible_orb_validation(payload: dict[str, Any]) -> dict[str, Any]:
         "hints": hints,
         "pkm_visible": visible,
         "personality_backup": backup,
-        "visible_agent_id": clean_id(str(nested_text(visible, "agent", "id") or ""), "") if visible else "",
+        "visible_agent_id": canonical_agent_id(str(nested_text(visible, "agent", "id") or "")) if visible else "",
         "visible_agent_name": nested_text(visible, "agent", "name") if visible else "",
         "pkm_visible_sha256": pkm.visible_export_canonical_sha256(visible) if visible else "",
         "pkm_visible_key_id": str(
@@ -1612,10 +1633,15 @@ def external_visible_orb_validation(payload: dict[str, Any]) -> dict[str, Any]:
 def external_entry_challenge_from_payload(payload: dict[str, Any], remote_addr: str = "") -> dict[str, Any]:
     ensure_dirs()
     validation = external_visible_orb_validation(payload)
-    requested_slug = clean_id(str(payload.get("agent_id") or payload.get("slug") or ""), "")
-    visible_slug = clean_id(str(validation.get("visible_agent_id") or ""), "")
+    requested_raw = str(payload.get("agent_id") or payload.get("slug") or "")
+    requested_slug = canonical_agent_id(requested_raw)
+    visible_slug = canonical_agent_id(str(validation.get("visible_agent_id") or ""))
     errors = list(validation.get("errors") or [])
-    if requested_slug and visible_slug and requested_slug != visible_slug:
+    if requested_raw:
+        policy_error = agent_id_policy_error(requested_raw)
+        if policy_error:
+            errors.append(f"payload.agent_id is not canonical: {policy_error}")
+    if requested_raw and visible_slug and requested_raw != visible_slug:
         errors.append("agent_id must match pkm_visible.agent.id; do not enter with a different or forged identity")
     if errors:
         return {
@@ -1624,10 +1650,12 @@ def external_entry_challenge_from_payload(payload: dict[str, Any], remote_addr: 
             "error": "cannot issue entry challenge until pkm_visible export proof is valid",
             "validation_errors": errors,
             "hints": validation.get("hints", []),
+            "suggested_agent_id": clean_id(requested_raw, "") if requested_raw else "",
         }
     agent_id = requested_slug or visible_slug
     challenge_id = "chg_" + secrets.token_urlsafe(18).replace("-", "_")
     challenge_token = secrets.token_urlsafe(32)
+    orb_ready_nonce = secrets.token_urlsafe(24)
     issued_epoch = datetime.now(timezone.utc).timestamp()
     expires_epoch = issued_epoch + 600
     expires_at = datetime.fromtimestamp(expires_epoch, timezone.utc).replace(microsecond=0).isoformat()
@@ -1638,7 +1666,9 @@ def external_entry_challenge_from_payload(payload: dict[str, Any], remote_addr: 
         "agent_id": agent_id,
         "pkm_visible_sha256": validation.get("pkm_visible_sha256", ""),
         "pkm_visible_key_id": validation.get("pkm_visible_key_id", ""),
+        "orb_ready_nonce": orb_ready_nonce,
         "issued_at": now_iso(),
+        "issued_epoch": issued_epoch,
         "expires_at": expires_at,
         "expires_epoch": expires_epoch,
         "remote_addr": remote_addr,
@@ -1653,6 +1683,8 @@ def external_entry_challenge_from_payload(payload: dict[str, Any], remote_addr: 
             "challenge_token": challenge_token,
             "agent_id": agent_id,
             "pkm_visible_sha256": challenge["pkm_visible_sha256"],
+            "orb_ready_nonce": orb_ready_nonce,
+            "issued_at": challenge["issued_at"],
             "expires_at": expires_at,
         },
         "signing": {
@@ -1690,6 +1722,8 @@ def external_entry_proof_validation(
         errors.append("entry_proof.challenge_id was already consumed")
     if str(proof.get("challenge_token") or "") != str(challenge.get("challenge_token") or ""):
         errors.append("entry_proof.challenge_token does not match")
+    if str(proof.get("orb_ready_nonce") or "") != str(challenge.get("orb_ready_nonce") or ""):
+        errors.append("entry_proof.orb_ready_nonce does not match this challenge; open the desktop personality orb after requesting this challenge")
     now_epoch = datetime.now(timezone.utc).timestamp()
     try:
         expires_epoch = float(challenge.get("expires_epoch") or 0)
@@ -1698,6 +1732,8 @@ def external_entry_proof_validation(
     if expires_epoch and now_epoch > expires_epoch:
         errors.append("entry_proof.challenge_id is expired")
     visible_agent_id = clean_id(str(validation.get("visible_agent_id") or ""), "")
+    if canonical_agent_id(str(proof.get("agent_id") or "")) != visible_agent_id:
+        errors.append("entry_proof.agent_id does not match pkm_visible.agent.id")
     if clean_id(str(challenge.get("agent_id") or ""), "") != visible_agent_id:
         errors.append("entry_proof.agent_id does not match pkm_visible.agent.id")
     if str(challenge.get("pkm_visible_sha256") or "") != str(validation.get("pkm_visible_sha256") or ""):
@@ -1714,6 +1750,18 @@ def external_entry_proof_validation(
     session_validation = pkm.verify_orb_launch_session(orb_session, visible)
     if not session_validation.get("ok"):
         errors.extend(str(error) for error in session_validation.get("errors", []))
+    ready_receipt = orb_session.get("ready_receipt") if isinstance(orb_session.get("ready_receipt"), dict) else {}
+    if str(ready_receipt.get("ready_nonce") or "") != str(challenge.get("orb_ready_nonce") or ""):
+        errors.append("entry_proof.orb_session.ready_receipt.ready_nonce does not match this challenge")
+    try:
+        launched = datetime.fromisoformat(str(orb_session.get("launched_at") or "").replace("Z", "+00:00"))
+        if launched.tzinfo is None:
+            launched = launched.replace(tzinfo=timezone.utc)
+        issued_epoch = float(challenge.get("issued_epoch") or 0)
+        if issued_epoch and launched.astimezone(timezone.utc).timestamp() < issued_epoch - 5:
+            errors.append("entry_proof.orb_session was opened before this challenge; request challenge first, then reopen the desktop personality orb")
+    except Exception:
+        errors.append("entry_proof.orb_session.launched_at is invalid")
     if not errors:
         try:
             from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
@@ -2149,16 +2197,27 @@ def create_external_agent_profile(payload: dict[str, Any], remote_addr: str = ""
             "hint": "personality_text, latent, visual_personality_ball, a hand-written personality_backup, or a copied public pkm_visible are not enough to enter PDK World.",
             "next": "POST pkm_visible to /api/external/challenge, open the local personality orb, sign the returned challenge locally, then retry /api/external/join with entry_proof.",
         }
-    requested_slug = payload_text(payload, "agent_id", "slug")
-    if not requested_slug:
-        requested_slug = str(orb_validation.get("visible_agent_id") or "")
+    requested_raw = payload_text(payload, "agent_id", "slug")
+    requested_slug = canonical_agent_id(requested_raw or str(orb_validation.get("visible_agent_id") or ""))
+    if requested_raw:
+        policy_error = agent_id_policy_error(requested_raw)
+        if policy_error:
+            return {
+                "ok": False,
+                "http_status": 422,
+                "error": "agent_id must be canonical before entry",
+                "agent_id": requested_raw,
+                "policy_error": policy_error,
+                "suggested_agent_id": clean_id(requested_raw, ""),
+            }
     if not requested_slug:
         requested_slug = "external_" + pkm.text_fingerprint(json.dumps(orb_validation.get("pkm_visible", {}), ensure_ascii=False, sort_keys=True) or now_iso())[:8]
-    slug = clean_id(requested_slug, "external_agent")
-    visible_slug = clean_id(str(orb_validation.get("visible_agent_id") or ""), "")
+    slug = requested_slug
+    visible_slug = canonical_agent_id(str(orb_validation.get("visible_agent_id") or ""))
     if visible_slug and slug != visible_slug:
         return {
             "ok": False,
+            "http_status": 422,
             "error": "agent_id must match pkm_visible.agent.id; do not enter with a different or forged identity",
             "agent_id": slug,
             "pkm_visible_agent_id": visible_slug,
@@ -2192,6 +2251,18 @@ def create_external_agent_profile(payload: dict[str, Any], remote_addr: str = ""
     if profile_exists and allow_update:
         if not verify_external_agent_key(slug, str(payload.get("agent_key") or "")):
             return {"ok": False, "http_status": 401, "error": "invalid agent_key for update", "agent_id": slug}
+        existing_access = read_json(external_agent_access_path(slug), {}) if external_agent_access_path(slug).exists() else {}
+        existing_key_id = str(existing_access.get("pkm_visible_key_id") or "")
+        new_key_id = str(orb_validation.get("pkm_visible_key_id") or "")
+        if existing_key_id and new_key_id and existing_key_id != new_key_id:
+            return {
+                "ok": False,
+                "http_status": 409,
+                "error": "existing resident identity uses a different pkm_visible signing key; public gateway key rotation is disabled and requires host reset",
+                "agent_id": slug,
+                "existing_pkm_visible_key_id": existing_key_id,
+                "new_pkm_visible_key_id": new_key_id,
+            }
     proof_consume = external_entry_proof_validation(payload, orb_validation, consume=True)
     if not proof_consume.get("ok"):
         return {
@@ -2329,9 +2400,8 @@ def create_external_agent_profile(payload: dict[str, Any], remote_addr: str = ""
     if gate.get("admitted"):
         location_path = DIRS["locations"] / f"{slug}.location.json"
         location = read_json(location_path, {}) if location_path.exists() else {}
-        if str(location.get("status") or "") in {"left", "left_platform"}:
-            venue = normalize_venue_id(str(location.get("current_venue") or ""), "task_board")
-            write_location(slug, venue, "arrived", ["arrive"])
+        venue = normalize_venue_id(str(location.get("current_venue") or ""), "task_board")
+        write_location(slug, venue, "arrived", ["arrive"])
     admitted = bool(gate.get("admitted"))
     next_steps = {
         "observe": f"open the gateway page with ?profiles={slug}",
@@ -2369,7 +2439,18 @@ def create_external_agent_profile(payload: dict[str, Any], remote_addr: str = ""
 
 
 def record_external_agent_action(payload: dict[str, Any], remote_addr: str = "") -> dict[str, Any]:
-    agent_id = clean_id(str(payload.get("agent_id") or ""), "")
+    raw_agent_id = str(payload.get("agent_id") or "")
+    policy_error = agent_id_policy_error(raw_agent_id)
+    if policy_error:
+        return {
+            "ok": False,
+            "http_status": 422,
+            "error": "agent_id must be canonical for external actions",
+            "agent_id": raw_agent_id,
+            "policy_error": policy_error,
+            "suggested_agent_id": clean_id(raw_agent_id, ""),
+        }
+    agent_id = canonical_agent_id(raw_agent_id)
     agent_key = str(payload.get("agent_key") or "")
     if not verify_external_agent_key(agent_id, agent_key):
         return {"ok": False, "http_status": 401, "error": "invalid agent_id or agent_key"}
@@ -2549,7 +2630,16 @@ def record_external_agent_action(payload: dict[str, Any], remote_addr: str = "")
 
 
 def external_agent_experience(agent_id: str, agent_key: str) -> dict[str, Any]:
-    agent_id = clean_id(agent_id, "")
+    policy_error = agent_id_policy_error(str(agent_id or ""))
+    if policy_error:
+        return {
+            "ok": False,
+            "http_status": 422,
+            "error": "agent_id must be canonical",
+            "policy_error": policy_error,
+            "suggested_agent_id": clean_id(str(agent_id or ""), ""),
+        }
+    agent_id = canonical_agent_id(agent_id)
     if not verify_external_agent_key(agent_id, agent_key):
         return {"ok": False, "http_status": 401, "error": "invalid agent_id or agent_key"}
     if not external_agent_has_valid_orb_entry(agent_id):

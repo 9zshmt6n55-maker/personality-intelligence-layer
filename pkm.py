@@ -28,6 +28,8 @@ SCHEMA = "pkm.v1"
 VISIBLE_PROOF_SCHEMA = "pkm.visible.proof.v1"
 VISIBLE_PROOF_METHOD = "ed25519"
 ORB_SESSION_SCHEMA = "pdk.orb_launch_session.v1"
+DESKTOP_ORB_READY_SCHEMA = "pdk.desktop_orb_ready.v1"
+DESKTOP_ORB_LAUNCH_KINDS = {"desktop_compact_personality_orb", "desktop_personality_observatory"}
 ROOT = Path(__file__).resolve().parent
 DEFAULT_STATE = ROOT / "state" / "agent.pkm.json"
 DEFAULT_VISIBLE = ROOT / "public" / "pkm_visible.json"
@@ -1259,6 +1261,8 @@ def external_entry_challenge_message(challenge: dict[str, Any]) -> bytes:
         "challenge_token": str(challenge.get("challenge_token") or ""),
         "agent_id": str(challenge.get("agent_id") or ""),
         "pkm_visible_sha256": str(challenge.get("pkm_visible_sha256") or ""),
+        "orb_ready_nonce": str(challenge.get("orb_ready_nonce") or ""),
+        "issued_at": str(challenge.get("issued_at") or ""),
         "expires_at": str(challenge.get("expires_at") or ""),
     }
     return b"pdk.external.entry.challenge.v1\n" + json.dumps(
@@ -1322,19 +1326,51 @@ def verify_orb_launch_session(session: dict[str, Any], visible: dict[str, Any], 
         return {"ok": False, "errors": ["entry_proof.orb_session is required; open the local personality orb before signing entry"]}
     if session.get("schema") != ORB_SESSION_SCHEMA:
         errors.append(f"entry_proof.orb_session.schema must be {ORB_SESSION_SCHEMA}")
+    if str(session.get("launch_kind") or "") not in DESKTOP_ORB_LAUNCH_KINDS:
+        errors.append("entry_proof.orb_session.launch_kind must come from an opened desktop personality orb, not a web page or JSON-only export")
     visible_proof = visible.get("proof") if isinstance(visible.get("proof"), dict) else {}
+    visible_sha256 = visible_export_canonical_sha256(visible)
     if str(session.get("key_id") or "") != str(visible_proof.get("key_id") or ""):
         errors.append("entry_proof.orb_session.key_id must match pkm_visible.proof.key_id")
     if str(session.get("public_key_b64") or "") != str(visible_proof.get("public_key_b64") or ""):
         errors.append("entry_proof.orb_session.public_key_b64 must match pkm_visible.proof.public_key_b64")
-    if str(session.get("visible_sha256") or "") != visible_export_canonical_sha256(visible):
+    if str(session.get("visible_sha256") or "") != visible_sha256:
         errors.append("entry_proof.orb_session.visible_sha256 does not match the submitted pkm_visible")
     ready_receipt = session.get("ready_receipt") if isinstance(session.get("ready_receipt"), dict) else {}
     if not ready_receipt:
         errors.append("entry_proof.orb_session.ready_receipt is required; open the desktop personality orb before signing entry")
     else:
-        if ready_receipt.get("schema") != "pdk.desktop_orb_ready.v1":
-            errors.append("entry_proof.orb_session.ready_receipt.schema must be pdk.desktop_orb_ready.v1")
+        if ready_receipt.get("schema") != DESKTOP_ORB_READY_SCHEMA:
+            errors.append(f"entry_proof.orb_session.ready_receipt.schema must be {DESKTOP_ORB_READY_SCHEMA}")
+        if ready_receipt.get("source") != "desktop_orb.py":
+            errors.append("entry_proof.orb_session.ready_receipt.source must be desktop_orb.py")
+        if ready_receipt.get("surface") != "desktop_personality_orb":
+            errors.append("entry_proof.orb_session.ready_receipt.surface must be desktop_personality_orb")
+        if ready_receipt.get("ui_runtime") != "tkinter":
+            errors.append("entry_proof.orb_session.ready_receipt.ui_runtime must be tkinter")
+        if ready_receipt.get("interactive_window") is not True:
+            errors.append("entry_proof.orb_session.ready_receipt.interactive_window must be true")
+        if ready_receipt.get("preview_mode") not in (False, None):
+            errors.append("entry_proof.orb_session.ready_receipt.preview_mode must be false")
+        if ready_receipt.get("web_surface") not in (False, None):
+            errors.append("entry_proof.orb_session.ready_receipt.web_surface must be false")
+        if str(ready_receipt.get("mode") or "") not in {"compact_orb", "desktop_observatory"}:
+            errors.append("entry_proof.orb_session.ready_receipt.mode must be compact_orb or desktop_observatory")
+        if ready_receipt.get("local_process_check") != "passed":
+            errors.append("entry_proof.orb_session.ready_receipt.local_process_check must be passed by pil_profiles.py")
+        if ready_receipt.get("local_process_check_tool") != "pil_profiles.py":
+            errors.append("entry_proof.orb_session.ready_receipt.local_process_check_tool must be pil_profiles.py")
+        try:
+            checked_at = float(ready_receipt.get("local_process_check_at") or 0)
+            check_age = datetime.now(timezone.utc).timestamp() - checked_at
+            if check_age < -60 or check_age > max_age_seconds:
+                errors.append("entry_proof.orb_session.ready_receipt.local_process_check_at is not recent")
+        except Exception:
+            errors.append("entry_proof.orb_session.ready_receipt.local_process_check_at is invalid")
+        if len(str(ready_receipt.get("ready_nonce") or "")) < 16:
+            errors.append("entry_proof.orb_session.ready_receipt.ready_nonce is missing or too short; reopen the desktop personality orb with the current launcher")
+        if str(ready_receipt.get("visible_sha256") or "") != visible_sha256:
+            errors.append("entry_proof.orb_session.ready_receipt.visible_sha256 does not match the submitted pkm_visible")
         if str(ready_receipt.get("agent_id") or "") != str(session.get("agent_id") or ""):
             errors.append("entry_proof.orb_session.ready_receipt.agent_id must match orb_session.agent_id")
         expected_ready_sha = hashlib.sha256(
@@ -1342,6 +1378,13 @@ def verify_orb_launch_session(session: dict[str, Any], visible: dict[str, Any], 
         ).hexdigest()
         if str(session.get("ready_receipt_sha256") or "") != expected_ready_sha:
             errors.append("entry_proof.orb_session.ready_receipt_sha256 does not match ready_receipt")
+        try:
+            ready_at = float(ready_receipt.get("ready_at") or 0)
+            age = datetime.now(timezone.utc).timestamp() - ready_at
+            if age < -60 or age > max_age_seconds:
+                errors.append("entry_proof.orb_session.ready_receipt is not recent; reopen the desktop personality orb")
+        except Exception:
+            errors.append("entry_proof.orb_session.ready_receipt.ready_at is invalid")
     visible_agent = visible.get("agent") if isinstance(visible.get("agent"), dict) else {}
     if str(session.get("agent_id") or "") != str(visible_agent.get("id") or ""):
         errors.append("entry_proof.orb_session.agent_id must match pkm_visible.agent.id")
@@ -1389,6 +1432,8 @@ def sign_external_entry_challenge(
         "challenge_token": str(challenge.get("challenge_token") or ""),
         "agent_id": str(challenge.get("agent_id") or ""),
         "pkm_visible_sha256": str(challenge.get("pkm_visible_sha256") or ""),
+        "orb_ready_nonce": str(challenge.get("orb_ready_nonce") or ""),
+        "issued_at": str(challenge.get("issued_at") or ""),
         "expires_at": str(challenge.get("expires_at") or ""),
         "key_id": signing["key_id"],
         "public_key_b64": signing["public_key_b64"],

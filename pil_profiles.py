@@ -4,7 +4,9 @@ from __future__ import annotations
 import argparse
 import copy
 import json
+import os
 import re
+import secrets
 import subprocess
 import sys
 import time
@@ -157,16 +159,90 @@ def deterministic_position(slug: str) -> tuple[int, int]:
     return 80 + seed % 420, 80 + (seed // 17) % 280
 
 
-def record_orb_session(paths: ProfilePaths, launch_kind: str = "personality_orb", ready_receipt: dict[str, Any] | None = None) -> dict[str, Any]:
-    state = pkm.load_state(paths.state)
+def current_profile_state_path(paths: ProfilePaths) -> Path:
+    try:
+        payload = json.loads(paths.runtime_mode.read_text(encoding="utf-8-sig"))
+        if str(payload.get("mode") or "") == "fresh" and paths.fresh_state.exists():
+            return paths.fresh_state
+    except Exception:
+        pass
+    return paths.state
+
+
+def visible_agent_id(visible: dict[str, Any], fallback: str = "") -> str:
+    agent = visible.get("agent") if isinstance(visible.get("agent"), dict) else {}
+    return gateway_agent_id(str(agent.get("id") or fallback or ""), fallback or "agent")
+
+
+def visible_sha256(visible: dict[str, Any]) -> str:
+    return pkm.visible_export_canonical_sha256(visible)
+
+
+def record_orb_session(
+    paths: ProfilePaths,
+    launch_kind: str = "personality_orb",
+    ready_receipt: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    state_file = current_profile_state_path(paths)
+    state = pkm.load_state(state_file)
     visible = json.loads(paths.visible.read_text(encoding="utf-8-sig"))
+    if not ready_receipt or not orb_process_is_alive(ready_receipt):
+        raise RuntimeError("desktop personality orb process is not running; refusing to sign an orb launch session")
+    ready_receipt = {
+        **ready_receipt,
+        "local_process_check": "passed",
+        "local_process_check_tool": "pil_profiles.py",
+        "local_process_check_at": time.time(),
+    }
     session = pkm.create_orb_launch_session(state, paths.slug, visible, launch_kind=launch_kind, ready_receipt=ready_receipt)
     paths.orb_session.write_text(json.dumps(session, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    pkm.save_state(paths.state, state)
+    pkm.save_state(state_file, state)
     return session
 
 
-def wait_for_orb_ready(paths: ProfilePaths, timeout_seconds: float = 8.0) -> dict[str, Any]:
+def orb_process_is_alive(receipt: dict[str, Any]) -> bool:
+    try:
+        pid = int(receipt.get("pid") or 0)
+    except Exception:
+        return False
+    if pid <= 0:
+        return False
+    if sys.platform.startswith("win"):
+        try:
+            result = subprocess.run(
+                [
+                    "powershell",
+                    "-NoProfile",
+                    "-Command",
+                    f"(Get-CimInstance Win32_Process -Filter \"ProcessId = {pid}\" | Select-Object -First 1 -ExpandProperty CommandLine)",
+                ],
+                cwd=str(ROOT),
+                check=False,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=3,
+            )
+        except Exception:
+            return False
+        command_line = result.stdout or ""
+        return result.returncode == 0 and "desktop_orb.py" in command_line and "--ready" in command_line
+    try:
+        os.kill(pid, 0)
+        return True
+    except Exception:
+        return False
+
+
+def wait_for_orb_ready(
+    paths: ProfilePaths,
+    expected_agent_id: str,
+    ready_nonce: str,
+    expected_visible_sha256: str,
+    timeout_seconds: float = 8.0,
+) -> dict[str, Any]:
     deadline = time.time() + timeout_seconds
     while time.time() < deadline:
         if paths.orb_ready.exists():
@@ -176,20 +252,36 @@ def wait_for_orb_ready(paths: ProfilePaths, timeout_seconds: float = 8.0) -> dic
                 receipt = {}
             if (
                 receipt.get("schema") == "pdk.desktop_orb_ready.v1"
-                and str(receipt.get("agent_id") or "") == paths.slug
+                and receipt.get("source") == "desktop_orb.py"
+                and receipt.get("surface") == "desktop_personality_orb"
+                and receipt.get("interactive_window") is True
+                and receipt.get("web_surface") is False
+                and str(receipt.get("agent_id") or "") == expected_agent_id
+                and str(receipt.get("ready_nonce") or "") == ready_nonce
+                and str(receipt.get("visible_sha256") or "") == expected_visible_sha256
                 and Path(str(receipt.get("visible") or "")).resolve() == paths.visible.resolve()
             ):
                 return receipt
         time.sleep(0.20)
-    raise RuntimeError("personality orb did not report ready; entry proof was not generated")
+    raise RuntimeError("desktop personality orb did not report a valid ready receipt; entry proof was not generated")
 
 
-def launch_profile(paths: ProfilePaths, compact: bool = True, x: int | None = None, y: int | None = None) -> None:
+def launch_profile(
+    paths: ProfilePaths,
+    compact: bool = True,
+    x: int | None = None,
+    y: int | None = None,
+    ready_nonce: str | None = None,
+) -> None:
     script = ROOT / "launch_personality_observatory.ps1"
     if x is None or y is None:
         x0, y0 = deterministic_position(paths.slug)
         x = x if x is not None else x0
         y = y if y is not None else y0
+    visible = json.loads(paths.visible.read_text(encoding="utf-8-sig"))
+    agent_id = visible_agent_id(visible, paths.slug)
+    ready_nonce = ready_nonce or secrets.token_urlsafe(24)
+    visible_hash = visible_sha256(visible)
     args = [
         "powershell",
         "-NoProfile",
@@ -198,13 +290,15 @@ def launch_profile(paths: ProfilePaths, compact: bool = True, x: int | None = No
         "-File",
         str(script),
         "-AgentId",
-        paths.slug,
+        agent_id,
         "-Visible",
         str(paths.visible),
         "-Signal",
         str(paths.signal),
         "-Ready",
         str(paths.orb_ready),
+        "-ReadyNonce",
+        ready_nonce,
         "-X",
         str(x),
         "-Y",
@@ -217,44 +311,65 @@ def launch_profile(paths: ProfilePaths, compact: bool = True, x: int | None = No
     if paths.orb_session.exists():
         paths.orb_session.unlink()
     subprocess.run(args, cwd=str(ROOT), check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    ready_receipt = wait_for_orb_ready(paths)
-    record_orb_session(paths, launch_kind="compact_personality_orb" if compact else "personality_observatory", ready_receipt=ready_receipt)
+    ready_receipt = wait_for_orb_ready(paths, agent_id, ready_nonce, visible_hash)
+    record_orb_session(
+        paths,
+        launch_kind="desktop_compact_personality_orb" if compact else "desktop_personality_observatory",
+        ready_receipt=ready_receipt,
+    )
 
 
 def sign_entry_challenge(profile: str, challenge_json: Path) -> dict[str, Any]:
     paths = profile_paths(profile)
-    if not paths.state.exists() or not paths.visible.exists():
+    if not current_profile_state_path(paths).exists() or not paths.visible.exists():
         raise FileNotFoundError("profile state and pkm_visible.json are required before signing entry challenge")
-    if not paths.orb_session.exists():
-        raise FileNotFoundError("orb_session.json not found; run pil_profiles.py boot --profile <profile> --observatory first")
-    state = pkm.load_state(paths.state)
-    visible = json.loads(paths.visible.read_text(encoding="utf-8-sig"))
-    orb_session = json.loads(paths.orb_session.read_text(encoding="utf-8-sig"))
-    session_check = pkm.verify_orb_launch_session(orb_session, visible)
-    if not session_check.get("ok"):
-        raise RuntimeError("; ".join(session_check.get("errors", [])))
     challenge = json.loads(challenge_json.read_text(encoding="utf-8-sig"))
     challenge_body = challenge.get("challenge") if isinstance(challenge.get("challenge"), dict) else challenge
+    challenge_nonce = str(challenge_body.get("orb_ready_nonce") or "")
+    if not challenge_nonce:
+        raise RuntimeError("challenge is missing orb_ready_nonce; request a fresh /api/external/challenge from the current gateway")
+    state_file = current_profile_state_path(paths)
+    state = pkm.load_state(state_file)
+    visible = json.loads(paths.visible.read_text(encoding="utf-8-sig"))
     challenge_agent_id = gateway_agent_id(str(challenge_body.get("agent_id") or ""), "")
     visible_agent_id = gateway_agent_id(str((visible.get("agent") if isinstance(visible.get("agent"), dict) else {}).get("id") or ""), "")
-    profile_agent_id = gateway_agent_id(paths.slug)
-    if visible_agent_id and profile_agent_id != visible_agent_id:
-        raise RuntimeError(
-            "profile slug does not match pkm_visible.agent.id after gateway normalization; "
-            f"profile={paths.slug} maps to {profile_agent_id}, pkm_visible.agent.id maps to {visible_agent_id}. "
-            "Use the profile that owns this pkm_visible.json."
-        )
     if challenge_agent_id and visible_agent_id and challenge_agent_id != visible_agent_id:
         raise RuntimeError(
             "challenge agent_id does not match this profile's pkm_visible.agent.id; "
             f"challenge={challenge_agent_id}, pkm_visible.agent.id={visible_agent_id}. "
             "Request a new /api/external/challenge with the same agent_id as pkm_visible.agent.id."
         )
+
+    def load_session() -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+        if not paths.orb_session.exists():
+            return {}, {}, {"ok": False, "errors": ["orb_session.json not found"]}
+        session = json.loads(paths.orb_session.read_text(encoding="utf-8-sig"))
+        check = pkm.verify_orb_launch_session(session, visible)
+        receipt = session.get("ready_receipt") if isinstance(session.get("ready_receipt"), dict) else {}
+        if str(receipt.get("ready_nonce") or "") != challenge_nonce:
+            check = {"ok": False, "errors": list(check.get("errors", [])) + ["desktop orb ready nonce does not match this challenge"]}
+        if check.get("ok") and not orb_process_is_alive(receipt):
+            check = {"ok": False, "errors": ["desktop personality orb process is not running"]}
+        return session, receipt, check
+
+    orb_session, ready_receipt, session_check = load_session()
+    if not session_check.get("ok"):
+        launch_profile(paths, compact=True, ready_nonce=challenge_nonce)
+        state_file = current_profile_state_path(paths)
+        state = pkm.load_state(state_file)
+        visible = json.loads(paths.visible.read_text(encoding="utf-8-sig"))
+        orb_session, ready_receipt, session_check = load_session()
+    if not session_check.get("ok"):
+        raise RuntimeError("; ".join(session_check.get("errors", [])))
+
     proof = pkm.sign_external_entry_challenge(state, challenge, orb_session=orb_session)
-    pkm.save_state(paths.state, state)
+    pkm.save_state(state_file, state)
     return {
         "ok": True,
         "profile": paths.slug,
+        "agent_id": visible_agent_id,
+        "desktop_orb_verified": True,
+        "desktop_orb_pid": ready_receipt.get("pid", 0),
         "entry_proof": proof,
         "orb_session": str(paths.orb_session),
     }
@@ -302,6 +417,11 @@ def boot_profile(profile: str, mode: str = "continue", reset: bool = False, open
     if reset or not state_file.exists():
         pkm.init_state(state_file, force=True)
     state = pkm.load_state(state_file)
+    manifest = state.setdefault("manifest", {})
+    if manifest.get("agent_id") in {"pkm_agent_001", "default"}:
+        manifest["agent_id"] = gateway_agent_id(paths.slug)
+    if not str(manifest.get("name") or "").strip() or str(manifest.get("name") or "") == "Kernel-01":
+        manifest["name"] = paths.slug
     pkm.export_visible(state, paths.visible)
     pkm.save_state(state_file, state)
     paths.runtime_mode.write_text(json.dumps({"mode": mode}, ensure_ascii=False, indent=2), encoding="utf-8")

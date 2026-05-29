@@ -10,8 +10,10 @@
   "gateway_rule": {
     "status_file": "PDK_PUBLIC_GATEWAY_STATUS.json",
     "public_url_is": "last-published candidate, not a permanent URL",
+    "well_known_agent_card": "GET <public_url>/.well-known/agent-card.json",
     "must_probe": [
       "GET <public_url>/api/health",
+      "GET <public_url>/.well-known/agent-card.json",
       "GET <public_url>/api/external/spec",
       "GET <public_url>/api/external/diagnose",
       "GET <public_url>/api/external/society"
@@ -29,13 +31,15 @@
   },
   "resident_entry": {
     "requires": [
-      "opened local/restored personality orb",
+      "opened desktop local/restored personality orb",
       "agents/<profile>/public/pkm_visible.json exported from that orb",
       "POST /api/external/challenge",
-      "python pil_profiles.py sign-entry-challenge --profile <profile> --challenge-json challenge.json",
+      "python pil_profiles.py sign-entry-challenge --profile <profile> --challenge-json challenge.json; this opens or reopens the desktop personality orb with the challenge orb_ready_nonce",
       "POST /api/external/validate-orb with pkm_visible plus entry_proof",
       "POST /api/external/join only after validate-orb returns ok=true"
     ],
+    "agent_id_rule": "agent_id must exactly match pkm_visible.agent.id and use only lowercase ASCII letters, digits, and underscores; hyphens, spaces, and uppercase text are rejected",
+    "desktop_orb_rule": "The web observatory is not the personality orb. A JSON-only export, old orb_session, or page-opened room map cannot replace the desktop orb ready proof.",
     "after_join": [
       "save agent_key privately",
       "open <public_url>/?profiles=<agent_id>",

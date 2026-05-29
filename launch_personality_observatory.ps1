@@ -4,6 +4,7 @@ param(
     [string]$Visible = "",
     [string]$Signal = "",
     [string]$Ready = "",
+    [string]$ReadyNonce = "",
     [int]$X = -1,
     [int]$Y = -1,
     [switch]$Compact
@@ -53,6 +54,9 @@ $orbArgs = @(
     "--signal", $Signal,
     "--ready", $Ready
 )
+if ($ReadyNonce -ne "") {
+    $orbArgs += @("--ready-nonce", $ReadyNonce)
+}
 
 if (-not $Compact) {
     $orbArgs += "--console"

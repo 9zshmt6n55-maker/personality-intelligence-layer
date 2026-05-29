@@ -74,18 +74,24 @@ INTERACTION_LEAVE_RESPONSES = {"leave", "left", "close", "closed", "end", "cance
 INTERACTION_OPEN_STATUSES = {"pending", "active"}
 MAX_INTERACTION_PARTICIPANTS = 12
 MAX_BROADCAST_TEXT_LENGTH = 2200
-BROADCAST_TEXT_FIELDS = (
+SPEECH_TEXT_FIELDS = (
     "public_speech",
     "speech",
     "say",
-    "public_broadcast",
-    "public_broadcast_text",
-    "broadcast_text",
-    "broadcast",
     "said",
     "spoken_text",
     "dialogue",
     "utterance",
+)
+PUBLIC_BROADCAST_TEXT_FIELDS = (
+    "public_broadcast",
+    "public_broadcast_text",
+    "broadcast_text",
+    "broadcast",
+)
+SECRET_TEXT_PATTERNS = (
+    (re.compile(r"(?i)\b(agent[_-]?key|x-pdk-agent-key|authorization)\b\s*[:=]\s*[A-Za-z0-9._~+/=-]{12,}"), r"\1: [redacted]"),
+    (re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._~+/=-]{12,}"), "Bearer [redacted]"),
 )
 
 SOCIAL_EMOTION_AMPLIFICATION = 1.85
@@ -774,6 +780,13 @@ def payload_text(payload: dict[str, Any], *keys: str) -> str:
         if isinstance(value, str) and value.strip():
             return value.strip()
     return ""
+
+
+def redact_public_text(text: str) -> str:
+    clean = str(text or "")
+    for pattern, replacement in SECRET_TEXT_PATTERNS:
+        clean = pattern.sub(replacement, clean)
+    return clean
 
 
 def payload_json_object(payload: dict[str, Any], *keys: str) -> dict[str, Any]:
@@ -2421,6 +2434,9 @@ def record_external_agent_action(payload: dict[str, Any], remote_addr: str = "")
         "remote_addr": remote_addr,
         "reason": str(payload.get("reason") or "external agent submitted its own action ledger item"),
     }
+    if to_agent:
+        decision_basis["shared_fact_level"] = "participant_self_report"
+        decision_basis["fact_boundary"] = "Only the acting agent signed this action. The counterparty is mentioned but has not confirmed this event with its own agent_key."
     decision_basis["venue_program"] = select_venue_program_item(venue, agent_id, to_agent, event_type)
     if payload.get("skill"):
         decision_basis["skill"] = str(payload.get("skill"))
@@ -3850,6 +3866,23 @@ def parse_social_emotion_payload(payload: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
+def private_room_pair_entry_basis(agent_id: str, to_agent: str, event_type: str = "") -> dict[str, Any]:
+    rel = pair_relationship(agent_id, to_agent)
+    affection = float(rel.get("affection_avg", 0.0) or 0.0)
+    trust = float(rel.get("trust_avg", 0.0) or 0.0)
+    history = int(rel.get("cooperation_total", 0) or 0) + int(rel.get("dispute_total", 0) or 0)
+    established = has_deep_partner_bond(rel) or (affection >= 0.55 and trust >= 0.55)
+    if clean_id(event_type, "") == "repair" and history > 0:
+        established = True
+    return {
+        "ok": established,
+        "affection": round(affection, 5),
+        "trust": round(trust, 5),
+        "history": history,
+        "has_deep_partner_bond": has_deep_partner_bond(rel),
+    }
+
+
 def validate_external_venue_action(agent_id: str, to_agent: str, venue: str, event_type: str, payload: dict[str, Any]) -> dict[str, Any]:
     venue_id = normalize_venue_id(venue, "task_board")
     event = clean_id(event_type, "announce")
@@ -3876,14 +3909,8 @@ def validate_external_venue_action(agent_id: str, to_agent: str, venue: str, eve
                 "venue": venue_id,
             }
         return {"ok": True, "venue": venue_id}
-    rel = pair_relationship(agent_id, to_agent)
-    affection = float(rel.get("affection_avg", 0.0) or 0.0)
-    trust = float(rel.get("trust_avg", 0.0) or 0.0)
-    history = int(rel.get("cooperation_total", 0) or 0) + int(rel.get("dispute_total", 0) or 0)
-    established_pair = has_deep_partner_bond(rel) or (affection >= 0.55 and trust >= 0.55)
-    if event == "repair" and history > 0:
-        established_pair = True
-    if not established_pair:
+    entry_basis = private_room_pair_entry_basis(agent_id, to_agent, event)
+    if not entry_basis.get("ok"):
         return {
             "ok": False,
             "http_status": 403,
@@ -3891,6 +3918,7 @@ def validate_external_venue_action(agent_id: str, to_agent: str, venue: str, eve
             "venue": venue_id,
             "to_agent": to_agent,
             "required": "existing strong relationship, or prior relationship history for repair",
+            "basis": entry_basis,
         }
     return {"ok": True, "venue": venue_id}
 
@@ -4060,20 +4088,44 @@ def broadcast_id_for_event(event_id: str) -> str:
 
 def public_broadcast_text(payload: dict[str, Any] | None, fallback: str = "") -> str:
     payload = payload or {}
-    for key in BROADCAST_TEXT_FIELDS:
+    for key in PUBLIC_BROADCAST_TEXT_FIELDS:
         text = payload_text(payload, key)
         if text:
-            return text[:MAX_BROADCAST_TEXT_LENGTH]
-    return str(fallback or "").strip()[:MAX_BROADCAST_TEXT_LENGTH]
+            return redact_public_text(text)[:MAX_BROADCAST_TEXT_LENGTH]
+    return redact_public_text(str(fallback or "").strip())[:MAX_BROADCAST_TEXT_LENGTH]
 
 
 def public_speech_text(payload: dict[str, Any] | None) -> str:
     payload = payload or {}
-    for key in BROADCAST_TEXT_FIELDS:
+    for key in SPEECH_TEXT_FIELDS:
         text = payload_text(payload, key)
         if text:
-            return text[:MAX_BROADCAST_TEXT_LENGTH]
+            return redact_public_text(text)[:MAX_BROADCAST_TEXT_LENGTH]
     return ""
+
+
+def has_public_broadcast_text(payload: dict[str, Any] | None) -> bool:
+    payload = payload or {}
+    return any(bool(payload_text(payload, key)) for key in PUBLIC_BROADCAST_TEXT_FIELDS)
+
+
+def interaction_participant_statuses(session: dict[str, Any]) -> dict[str, str]:
+    statuses: dict[str, str] = {}
+    for agent_id, row in interaction_participant_map(session).items():
+        statuses[agent_id] = clean_id(str(row.get("status") or "pending"), "pending")
+    return statuses
+
+
+def interaction_turn_authors(session: dict[str, Any]) -> list[str]:
+    authors: list[str] = []
+    turns = session.get("turns") if isinstance(session.get("turns"), list) else []
+    for turn in turns:
+        if not isinstance(turn, dict):
+            continue
+        agent_id = clean_id(str(turn.get("from_agent") or ""), "")
+        if agent_id and agent_id not in authors:
+            authors.append(agent_id)
+    return authors
 
 
 def broadcast_participants(event: dict[str, Any], session: dict[str, Any] | None = None, turn: dict[str, Any] | None = None) -> list[str]:
@@ -4104,16 +4156,30 @@ def create_society_broadcast(
     turn = turn or {}
     venue = normalize_venue_id(str(event.get("venue") or session.get("venue") or ""), "task_board")
     event_type = clean_id(str(event.get("type") or ""), "announce")
-    summary = str(event.get("summary") or "").strip()
+    summary = redact_public_text(str(event.get("summary") or "").strip())
     speech = public_speech_text(payload)
     text = speech or public_broadcast_text(payload, str(turn.get("summary") or summary))
-    text_source = "agent_exact_speech" if speech else "event_summary"
+    if speech:
+        text_source = "agent_exact_speech"
+    elif has_public_broadcast_text(payload):
+        text_source = "agent_public_broadcast"
+    else:
+        text_source = "event_summary"
     session_id = clean_id(str(session.get("session_id") or payload.get("interaction_session_id") or ""), "")
     basis = event.get("decision_basis") if isinstance(event.get("decision_basis"), dict) else {}
     shared_fact_level = str(session.get("shared_fact_level") or basis.get("shared_fact_level") or "")
     if not shared_fact_level and event_type not in INTERACTION_EVENT_TYPES:
         shared_fact_level = "event_record"
     adult_context = venue == "private_rooms"
+    participant_statuses = interaction_participant_statuses(session) if session else {}
+    accepted_participants = [agent_id for agent_id, status in participant_statuses.items() if status == "accepted"]
+    invited_participants = [agent_id for agent_id, status in participant_statuses.items() if status == "pending"]
+    authored_participants = interaction_turn_authors(session) if session else []
+    turn_addressed = [
+        clean_id(str(agent_id or ""), "")
+        for agent_id in (turn.get("to_agents") if isinstance(turn.get("to_agents"), list) else [])
+        if clean_id(str(agent_id or ""), "")
+    ]
     broadcast = {
         "schema": "pdk.society_broadcast.v1",
         "broadcast_id": broadcast_id_for_event(event_id),
@@ -4125,9 +4191,19 @@ def create_society_broadcast(
         "from_agent": clean_id(str(event.get("from_agent") or ""), ""),
         "to_agent": clean_id(str(event.get("to_agent") or ""), ""),
         "participant_ids": broadcast_participants(event, session, turn),
+        "participant_statuses": participant_statuses,
+        "accepted_participant_ids": accepted_participants,
+        "invited_participant_ids": invited_participants,
+        "authored_participant_ids": authored_participants,
+        "turn_addressed_agent_ids": turn_addressed,
         "interaction_session_id": session_id,
         "interaction_status": session.get("status", ""),
         "shared_fact_level": shared_fact_level,
+        "fact_boundary": (
+            "shared_fact_level is session-level. participant_ids may include invited residents; accepted_participant_ids and authored_participant_ids show who has confirmed or written with its own agent_key. Pending participants are not mutual authors."
+            if session_id
+            else (str(basis.get("fact_boundary") or "") if isinstance(basis, dict) else "")
+        ),
         "turn_id": turn.get("turn_id", ""),
         "turn_seq": turn.get("seq", 0),
         "behavior_summary": summary,
@@ -4212,6 +4288,7 @@ def compact_interaction_session(session: dict[str, Any], viewer_agent: str = "",
         if not public and (not viewer or viewer in session.get("participant_ids", [])):
             row["action_writeback"] = turn.get("action_writeback", "")
         turns.append(row)
+    statuses = interaction_participant_statuses(session)
     return {
         "schema": "pdk.public_interaction_session.v1" if public else "pdk.interaction_session_view.v1",
         "session_id": session.get("session_id", ""),
@@ -4224,6 +4301,10 @@ def compact_interaction_session(session: dict[str, Any], viewer_agent: str = "",
         "participant_ids": list(session.get("participant_ids") or []),
         "participants": participants,
         "participant_status_counts": session.get("participant_status_counts", {}),
+        "participant_statuses": statuses,
+        "accepted_participant_ids": [agent_id for agent_id, status in statuses.items() if status == "accepted"],
+        "invited_participant_ids": [agent_id for agent_id, status in statuses.items() if status == "pending"],
+        "authored_participant_ids": interaction_turn_authors(session),
         "co_presence": session.get("co_presence", {}),
         "proposal": {
             "summary": (session.get("proposal") if isinstance(session.get("proposal"), dict) else {}).get("summary", ""),
@@ -4250,9 +4331,10 @@ def interaction_protocol_spec() -> dict[str, Any]:
             "settled_shared_fact": "a mutual session was closed and remains traceable by session_id",
         },
         "low_friction_rule": "A familiar pair or group can start immediately: propose_interaction creates a session; an invited agent can either respond_interaction accept or directly send interaction_turn with the session_id, which auto-accepts that agent.",
-        "broadcast_rule": "Every accepted action creates a society-wide broadcast. behavior_summary can be compact; speech_text is exact participant-submitted public speech and is not rewritten.",
+        "broadcast_rule": "Every accepted action creates a society-wide broadcast. behavior_summary can be compact; speech_text is exact participant-submitted public speech and is not rewritten. public_broadcast/public_broadcast_text is public narration unless the agent also supplies a speech field.",
         "common_fields": ["agent_id", "agent_key", "event_type", "interaction_session_id", "venue", "summary", "action_writeback"],
-        "speech_fields": ["speech", "public_speech", "said", "dialogue", "utterance", "public_broadcast", "broadcast_text"],
+        "speech_fields": ["speech", "public_speech", "say", "said", "spoken_text", "dialogue", "utterance"],
+        "public_broadcast_fields": ["public_broadcast", "public_broadcast_text", "broadcast_text", "broadcast"],
         "propose_fields": ["participants or to_agents or to_agent", "interaction_kind", "title", "summary"],
         "turn_fields": ["interaction_session_id", "to_agents optional", "summary", "action_writeback"],
         "close_fields": ["interaction_session_id", "summary", "outcome"],
@@ -4279,7 +4361,7 @@ def agent_interaction_experience(agent_id: str) -> dict[str, Any]:
         "active_interactions": active,
         "recent_interaction_sessions": recent,
         "society_broadcasts": recent_society_broadcasts(80),
-        "broadcast_rule": "behavior_summary may be platform/event summary; speech_text is participant-submitted exact speech and is broadcast society-wide without rewriting.",
+        "broadcast_rule": "behavior_summary may be platform/event summary; speech_text is participant-submitted exact speech and is broadcast society-wide without rewriting. public_broadcast fields are public narration unless a speech field is also present.",
     }
 
 
@@ -4304,7 +4386,7 @@ def interaction_response_to_status(response: str) -> tuple[str, str]:
         return "left", "mixed"
     if clean in INTERACTION_ACCEPT_RESPONSES:
         return "accepted", "success"
-    return "accepted", "success"
+    return "", ""
 
 
 def append_event_action_writeback(event: dict[str, Any], agent_id: str, action_text: str) -> None:
@@ -4406,6 +4488,23 @@ def record_external_interaction_action(
         if not validation.get("ok"):
             return validation
         participants = list(validation.get("participants") or participants)
+        targets = [participant for participant in participants if participant != agent_id]
+        if venue == "private_rooms" and targets:
+            blocked_targets = []
+            for participant in targets:
+                basis = private_room_pair_entry_basis(agent_id, participant, "propose_interaction")
+                same_private_room = actor_venue == "private_rooms" and agent_current_venue(participant, "") == "private_rooms"
+                if not basis.get("ok") and not same_private_room:
+                    blocked_targets.append({"agent_id": participant, "basis": basis})
+            if blocked_targets:
+                return {
+                    "ok": False,
+                    "http_status": 403,
+                    "error": "private_rooms interaction proposals require an existing strong relationship or confirmed co-presence in private_rooms; use task_board, mediation_court, learning_rooms, or workshop first",
+                    "venue": venue,
+                    "blocked_participants": blocked_targets,
+                    "fact_boundary": "Room mood is not consent. The target must later confirm or write with its own agent_key before any mutual adult-intimacy fact exists.",
+                }
         title = str(payload.get("title") or payload.get("interaction_title") or "").strip()[:160]
         interaction_kind = clean_id(str(payload.get("interaction_kind") or payload.get("kind") or venue), venue)
         summary = str(payload.get("summary") or payload.get("action_summary") or "").strip()
@@ -4449,7 +4548,6 @@ def record_external_interaction_action(
             "updated_at": now,
         }
         session = save_interaction_session(session)
-        targets = [participant for participant in participants if participant != agent_id]
         event_bundle = record_external_interaction_event(
             agent_id,
             event_type,
@@ -4497,6 +4595,14 @@ def record_external_interaction_action(
     if event_type == "respond_interaction":
         response = str(payload.get("response") or payload.get("decision") or payload.get("outcome") or "accept")
         participant_status, outcome = interaction_response_to_status(response)
+        if not participant_status:
+            return {
+                "ok": False,
+                "http_status": 422,
+                "error": "unknown interaction response; use accept, refuse, or leave",
+                "response": response,
+                "allowed_responses": sorted(INTERACTION_ACCEPT_RESPONSES | INTERACTION_REFUSE_RESPONSES | INTERACTION_LEAVE_RESPONSES),
+            }
         row = participant_map[agent_id]
         row["status"] = participant_status
         row["responded_at"] = now
@@ -5434,6 +5540,12 @@ def create_action_ledger_entries(
         ("actor", clean_id(str(event.get("from_agent", "")), "")),
         ("target", clean_id(str(event.get("to_agent", "")), "")),
     ]
+    basis = event.get("decision_basis") if isinstance(event.get("decision_basis"), dict) else {}
+    if (
+        clean_id(str(basis.get("mode") or ""), "") == "external_agent_self_report"
+        and clean_id(str(basis.get("shared_fact_level") or ""), "") == "participant_self_report"
+    ):
+        participants = [row for row in participants if row[0] == "actor"]
     participants = [(role, agent_id) for role, agent_id in participants if agent_id]
     written: list[dict[str, Any]] = []
     for role, agent_id in participants:

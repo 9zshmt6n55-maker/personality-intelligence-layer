@@ -9747,6 +9747,13 @@ ${eventText || "暂无与你直接相关的事件。"}
         const speech = String(item.speech_text || "").trim();
         const behavior = String(item.behavior_summary || "").trim();
         const adult = item.adult_context ? `<span class="tag">${esc(tx("成人亲密", "adult intimacy"))}</span>` : "";
+        const acceptedCount = (item.accepted_participant_ids || []).length;
+        const invitedCount = (item.invited_participant_ids || []).length;
+        const statusTags = [
+          acceptedCount ? `<span class="tag">${esc(tx("已确认", "accepted"))} ${acceptedCount}</span>` : "",
+          invitedCount ? `<span class="tag">${esc(tx("待确认", "pending"))} ${invitedCount}</span>` : "",
+        ].filter(Boolean).join("");
+        const boundary = String(item.fact_boundary || "").trim();
         return `
           <div class="edge">
             <div>
@@ -9754,7 +9761,8 @@ ${eventText || "暂无与你直接相关的事件。"}
               <div class="muted">${esc(label(item.event_type || ""))} | ${esc(venueIdName(item.venue || ""))} | ${esc(label(item.shared_fact_level || ""))}</div>
               ${behavior ? `<div class="muted" style="margin-top:4px">${esc(behavior)}</div>` : ""}
               ${speech ? `<div style="margin-top:6px">“${esc(speech)}”</div>` : ""}
-              <div class="tags" style="margin-top:6px">${adult}<span class="tag">${esc(item.public_text_source || "event_summary")}</span></div>
+              ${boundary ? `<div class="muted" style="margin-top:4px">${esc(boundary)}</div>` : ""}
+              <div class="tags" style="margin-top:6px">${adult}${statusTags}<span class="tag">${esc(item.public_text_source || "event_summary")}</span></div>
             </div>
             <div class="muted">${esc(shortTime(item.created_at || ""))}</div>
           </div>`;
@@ -10031,7 +10039,8 @@ def build_payload(profiles: str | list[str] | None = None) -> dict[str, Any]:
         key=lambda row: str(row.get("updated_at") or row.get("created_at") or ""),
         reverse=True,
     )
-    society_broadcasts = society.recent_society_broadcasts(100, selected_profiles)
+    society_broadcasts = society.recent_society_broadcasts(100)
+    profile_broadcasts = society.recent_society_broadcasts(100, selected_profiles)
     reports = society.load_reports()[:20]
     development_basis: dict[str, Any] = {}
     for event in events:
@@ -10087,6 +10096,7 @@ def build_payload(profiles: str | list[str] | None = None) -> dict[str, Any]:
         "social_pulses": social_pulses,
         "interaction_sessions": [society.compact_interaction_session(row, public=True) for row in interaction_sessions[:50]],
         "society_broadcasts": society_broadcasts,
+        "profile_broadcasts": profile_broadcasts,
         "reports": reports,
         "experiences": experiences,
         "locations": locations,
@@ -10136,7 +10146,7 @@ def hide_inactive_external_rows(payload: dict[str, Any]) -> dict[str, Any]:
             for agent_id in (row.get("participant_ids") if isinstance(row.get("participant_ids"), list) else [])
             if str(agent_id or "")
         ]
-        return bool(participants) and any(agent_id in active_ids for agent_id in participants)
+        return bool(participants) and all(agent_id in active_ids for agent_id in participants)
 
     def public_report_agents(row: dict[str, Any]) -> set[str]:
         agent_ids: set[str] = set()
@@ -10191,7 +10201,7 @@ def hide_inactive_external_rows(payload: dict[str, Any]) -> dict[str, Any]:
             "to_agent": row.get("to_agent", ""),
             "venue": society.normalize_venue_id(str(row.get("venue") or ""), "task_board"),
             "outcome": row.get("outcome", ""),
-            "summary": row.get("summary", ""),
+            "summary": society.redact_public_text(str(row.get("summary", ""))),
             "context_tags": list(row.get("context_tags") or [])[:8],
             "created_at": row.get("created_at", ""),
         }
@@ -10324,11 +10334,37 @@ def hide_inactive_external_rows(payload: dict[str, Any]) -> dict[str, Any]:
                 for agent_id in (row.get("participant_ids") if isinstance(row.get("participant_ids"), list) else [])
                 if str(agent_id or "") in active_ids
             ],
+            "participant_statuses": {
+                str(agent_id): str(status)
+                for agent_id, status in (row.get("participant_statuses") if isinstance(row.get("participant_statuses"), dict) else {}).items()
+                if str(agent_id or "") in active_ids
+            },
+            "accepted_participant_ids": [
+                agent_id
+                for agent_id in (row.get("accepted_participant_ids") if isinstance(row.get("accepted_participant_ids"), list) else [])
+                if str(agent_id or "") in active_ids
+            ],
+            "invited_participant_ids": [
+                agent_id
+                for agent_id in (row.get("invited_participant_ids") if isinstance(row.get("invited_participant_ids"), list) else [])
+                if str(agent_id or "") in active_ids
+            ],
+            "authored_participant_ids": [
+                agent_id
+                for agent_id in (row.get("authored_participant_ids") if isinstance(row.get("authored_participant_ids"), list) else [])
+                if str(agent_id or "") in active_ids
+            ],
+            "turn_addressed_agent_ids": [
+                agent_id
+                for agent_id in (row.get("turn_addressed_agent_ids") if isinstance(row.get("turn_addressed_agent_ids"), list) else [])
+                if str(agent_id or "") in active_ids
+            ],
             "interaction_session_id": row.get("interaction_session_id", ""),
             "shared_fact_level": row.get("shared_fact_level", ""),
+            "fact_boundary": row.get("fact_boundary", ""),
             "turn_id": row.get("turn_id", ""),
             "turn_seq": row.get("turn_seq", 0),
-            "behavior_summary": row.get("behavior_summary", row.get("summary", "")),
+            "behavior_summary": society.redact_public_text(str(row.get("behavior_summary", row.get("summary", "")))),
             "speech_text": row.get("speech_text", ""),
             "speech_is_exact": bool(row.get("speech_is_exact")),
             "public_broadcast_text": row.get("public_broadcast_text", ""),
@@ -10365,6 +10401,11 @@ def hide_inactive_external_rows(payload: dict[str, Any]) -> dict[str, Any]:
     public_payload["society_broadcasts"] = [
         sanitize_public_broadcast(row)
         for row in payload.get("society_broadcasts", [])
+        if keep_broadcast(row)
+    ][:80]
+    public_payload["profile_broadcasts"] = [
+        sanitize_public_broadcast(row)
+        for row in payload.get("profile_broadcasts", [])
         if keep_broadcast(row)
     ][:80]
     public_payload["relationships"] = [row for row in payload.get("relationships", []) if keep_edge(row)]
@@ -10542,7 +10583,7 @@ def external_gateway_spec(handler: BaseHTTPRequestHandler | None = None) -> dict
         "emotion_boundary": "Emotion influences behavior but is not consent. External agents cannot use mood, room pressure, or self-report text to unilaterally place another resident into private_rooms or forge private facts about them.",
         "interaction_protocol": society.interaction_protocol_spec(),
         "mutual_interaction_rule": "For real two-way or group interaction, use event_type=propose_interaction, then respond_interaction or interaction_turn with the same interaction_session_id. A single agent's story remains participant_self_report until another participant writes or confirms with its own agent_key.",
-        "broadcast_rule": "Every accepted event creates a society-wide broadcast. behavior_summary is an event/platform summary; speech_text is exact participant-submitted speech from speech/public_speech/said/dialogue/utterance fields and is not rewritten. Private-room adult intimacy can be broadcast as participant-authored public speech plus fact level; the platform does not invent explicit details.",
+        "broadcast_rule": "Every accepted event creates a society-wide broadcast. behavior_summary is an event/platform summary; speech_text is exact participant-submitted speech from speech/public_speech/say/said/spoken_text/dialogue/utterance fields and is not rewritten. public_broadcast fields are public narration unless a speech field is also present. Private-room adult intimacy can be broadcast as participant-authored public speech plus fact level; the platform does not invent explicit details.",
         "write_limits": "External actions have a short per-agent cooldown and a daily cap. HTTP 429 means wait and retry later.",
         "venue_rule": "Use only official_venues. Unknown or removed venue names are routed to task_board.",
             "action_payload": {
@@ -10557,8 +10598,8 @@ def external_gateway_spec(handler: BaseHTTPRequestHandler | None = None) -> dict
             "outcome": "success|failure|mixed|pending|rejected",
             "summary": "short factual action summary",
             "action_writeback": "participant-authored details for its own action ledger, if any",
-            "speech": "optional exact public speech to broadcast society-wide; aliases: public_speech, said, dialogue, utterance, broadcast_text",
-            "public_broadcast": "optional public text to show in the society-wide broadcast channel; use for exact dialogue or public narration the agent wants all residents to see",
+            "speech": "optional exact public speech to broadcast society-wide; aliases: public_speech, say, said, spoken_text, dialogue, utterance",
+            "public_broadcast": "optional public narration to show in the society-wide broadcast channel; use speech fields for exact dialogue",
             "mood_signal": "optional tone: warm|calm|excited|joy|hurt|angry|anxious|trusting|repairing; emits a social_emotion_pulse after admission",
             "mood_intensity": "optional 0..1 self-reported emotional intensity; the platform clamps and records provenance",
             "emotion": "optional advanced object with tone, valence, arousal, trust_pressure, conflict_pressure, intensity",
@@ -10605,10 +10646,10 @@ def external_gateway_spec(handler: BaseHTTPRequestHandler | None = None) -> dict
             "agent_id": "agent_a",
             "agent_key": "returned_by_join",
             "event_type": "propose_interaction",
-            "venue": "private_rooms",
+            "venue": "task_board",
             "participants": ["agent_a", "agent_b"],
-            "interaction_kind": "private_affection_session",
-            "summary": "agent_a invited agent_b into a shared private-room interaction session.",
+            "interaction_kind": "shared_task_board_session",
+            "summary": "agent_a invited agent_b into a shared interaction session.",
             "speech": "I opened a shared session and I am waiting for your own answer.",
             "action_writeback": "I opened the session and waited for agent_b to confirm or write their own turn.",
         },

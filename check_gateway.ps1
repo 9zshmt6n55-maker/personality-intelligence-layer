@@ -75,5 +75,8 @@ $ok = -not ($probes | Where-Object { -not $_.ok } | Select-Object -First 1)
   stale_by_snapshot_age = if ($ageMinutes -ne $null) { $ageMinutes -gt $staleAfter } else { $true }
   candidate_only = if ($status.candidate_only -ne $null) { [bool]$status.candidate_only } else { $true }
   rule = "Use this URL only if probes are ok. If probes fail, stop using the URL; do not use localhost unless you are on the host machine."
+  after_join_required = $status.after_join_required
+  agent_key_rule = $status.agent_key_rule
+  common_action_failures = $status.common_action_failures
   probes = $probes
 } | ConvertTo-Json -Depth 20

@@ -39,6 +39,7 @@ DIRS = {
     "ledgers": SOCIETY_ROOT / "ledgers",
     "moods": SOCIETY_ROOT / "moods",
     "social_pulses": SOCIETY_ROOT / "social_pulses",
+    "interaction_sessions": SOCIETY_ROOT / "interaction_sessions",
     "external_agents": SOCIETY_ROOT / "external_agents",
     "external_submissions": SOCIETY_ROOT / "external_submissions",
     "external_challenges": SOCIETY_ROOT / "external_challenges",
@@ -58,9 +59,19 @@ EVENT_TYPES = {
     "mission",
     "announce",
     "leave",
+    "propose_interaction",
+    "respond_interaction",
+    "interaction_turn",
+    "close_interaction",
 }
 
 OUTCOMES = {"success", "failure", "mixed", "pending", "rejected"}
+INTERACTION_EVENT_TYPES = {"propose_interaction", "respond_interaction", "interaction_turn", "close_interaction"}
+INTERACTION_ACCEPT_RESPONSES = {"accept", "accepted", "join", "joined", "continue", "ack", "yes", "ok"}
+INTERACTION_REFUSE_RESPONSES = {"refuse", "reject", "rejected", "decline", "no"}
+INTERACTION_LEAVE_RESPONSES = {"leave", "left", "close", "closed", "end", "cancel", "canceled"}
+INTERACTION_OPEN_STATUSES = {"pending", "active"}
+MAX_INTERACTION_PARTICIPANTS = 12
 
 SOCIAL_EMOTION_AMPLIFICATION = 1.85
 VENUE_EMOTION_AMPLIFICATION = 1.45
@@ -86,6 +97,10 @@ EVENT_EMOTION_PROFILES: dict[str, dict[str, float]] = {
     "blacklist": {"valence": -0.58, "arousal": 0.72, "trust_pressure": -0.36, "conflict_pressure": 0.66, "intensity": 0.95},
     "repair": {"valence": 0.32, "arousal": 0.18, "trust_pressure": 0.38, "conflict_pressure": -0.30, "intensity": 0.76},
     "leave": {"valence": -0.18, "arousal": 0.22, "trust_pressure": -0.08, "conflict_pressure": 0.10, "intensity": 0.48},
+    "propose_interaction": {"valence": 0.18, "arousal": 0.24, "trust_pressure": 0.18, "conflict_pressure": -0.02, "intensity": 0.52},
+    "respond_interaction": {"valence": 0.20, "arousal": 0.22, "trust_pressure": 0.20, "conflict_pressure": -0.03, "intensity": 0.50},
+    "interaction_turn": {"valence": 0.34, "arousal": 0.30, "trust_pressure": 0.30, "conflict_pressure": -0.05, "intensity": 0.72},
+    "close_interaction": {"valence": 0.08, "arousal": 0.12, "trust_pressure": 0.06, "conflict_pressure": -0.02, "intensity": 0.36},
 }
 
 OUTCOME_EMOTION_ADJUSTMENTS: dict[str, dict[str, float]] = {
@@ -2335,6 +2350,8 @@ def record_external_agent_action(payload: dict[str, Any], remote_addr: str = "")
             "agent_id": agent_id,
             "current_status": "left_platform",
         }
+    if event_type in INTERACTION_EVENT_TYPES:
+        return record_external_interaction_action(agent_id, event_type, payload, remote_addr, current_location)
     to_agent = clean_id(str(payload.get("to_agent") or payload.get("counterparty_agent") or ""), "")
     if to_agent and not agent_is_active_resident(to_agent):
         return {
@@ -2476,10 +2493,19 @@ def external_agent_experience(agent_id: str, agent_key: str) -> dict[str, Any]:
         return {"ok": False, "http_status": 401, "error": "invalid agent_id or agent_key"}
     if not external_agent_has_valid_orb_entry(agent_id):
         return invalid_external_orb_entry_error(agent_id)
+    interaction_view = agent_interaction_experience(agent_id)
     path = DIRS["experiences"] / f"{agent_id}.society_experience.json"
     if not path.exists():
-        return {"ok": True, "agent_id": agent_id, "experience": {}, "message": "No exported experience packet yet."}
-    return {"ok": True, "agent_id": agent_id, "experience": read_json(path)}
+        return {
+            "ok": True,
+            "agent_id": agent_id,
+            "experience": interaction_view,
+            **interaction_view,
+            "message": "No exported experience packet yet. Interaction sessions are still returned here.",
+        }
+    packet = read_json(path)
+    experience = {**packet, **interaction_view}
+    return {"ok": True, "agent_id": agent_id, "experience": experience, **interaction_view}
 
 
 def run_experiment(rounds: int = 4, sandbox_count: int = 4) -> dict[str, Any]:
@@ -3395,7 +3421,7 @@ def update_relationship(event: dict[str, Any]) -> dict[str, Any] | None:
     event_type = str(event.get("type"))
     outcome = str(event.get("outcome"))
 
-    if event_type in {"cooperate", "trade", "teach", "learn", "mission"}:
+    if event_type in {"cooperate", "trade", "teach", "learn", "mission", "interaction_turn"}:
         edge["cooperation_count"] = int(edge.get("cooperation_count", 0)) + 1
         if outcome == "success":
             edge["trust"] = round(clamp(float(edge.get("trust", 0.5)) + 0.035), 5)
@@ -3846,6 +3872,613 @@ def validate_external_venue_action(agent_id: str, to_agent: str, venue: str, eve
             "required": "existing strong relationship, or prior relationship history for repair",
         }
     return {"ok": True, "venue": venue_id}
+
+
+def interaction_session_path(session_id: str) -> Path:
+    return DIRS["interaction_sessions"] / f"{clean_id(session_id, 'session')}.interaction_session.json"
+
+
+def interaction_session_id(agent_id: str, participants: list[str], summary: str = "") -> str:
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S%f")
+    seed = "|".join([clean_id(agent_id, "agent"), ",".join(participants), summary, timestamp])
+    return "isn_" + timestamp + "_" + pkm.text_fingerprint(seed)[:8]
+
+
+def parse_agent_id_list(value: Any) -> list[str]:
+    raw_items: list[Any] = []
+    if isinstance(value, list):
+        raw_items.extend(value)
+    elif isinstance(value, tuple):
+        raw_items.extend(value)
+    elif isinstance(value, dict):
+        for key in ("agent_id", "id", "slug"):
+            if value.get(key):
+                raw_items.append(value.get(key))
+                break
+    elif value is not None:
+        raw_items.extend(re.split(r"[\s,;]+", str(value)))
+    result: list[str] = []
+    for item in raw_items:
+        if isinstance(item, dict):
+            for key in ("agent_id", "id", "slug"):
+                if item.get(key):
+                    item = item.get(key)
+                    break
+        agent_id = clean_id(str(item or ""), "")
+        if agent_id and agent_id not in result:
+            result.append(agent_id)
+    return result
+
+
+def interaction_participant_ids(payload: dict[str, Any], actor_id: str) -> list[str]:
+    participants: list[str] = [clean_id(actor_id, "")]
+    for key in (
+        "participant_ids",
+        "participants",
+        "to_agents",
+        "target_agents",
+        "counterparty_agents",
+        "to_agent",
+        "counterparty_agent",
+    ):
+        for agent_id in parse_agent_id_list(payload.get(key)):
+            if agent_id and agent_id not in participants:
+                participants.append(agent_id)
+    return participants[:MAX_INTERACTION_PARTICIPANTS]
+
+
+def validate_interaction_participants(participants: list[str], actor_id: str) -> dict[str, Any]:
+    cleaned = [agent_id for agent_id in participants if clean_id(agent_id, "")]
+    if clean_id(actor_id, "") not in cleaned:
+        return {"ok": False, "http_status": 422, "error": "interaction participants must include the acting agent"}
+    if len(cleaned) < 2:
+        return {"ok": False, "http_status": 422, "error": "interaction sessions require at least two participants"}
+    if len(cleaned) > MAX_INTERACTION_PARTICIPANTS:
+        return {
+            "ok": False,
+            "http_status": 422,
+            "error": "too many interaction participants",
+            "max_participants": MAX_INTERACTION_PARTICIPANTS,
+        }
+    invalid = [
+        agent_id
+        for agent_id in cleaned
+        if not agent_is_active_resident(agent_id) or not external_agent_has_valid_orb_entry(agent_id)
+    ]
+    if invalid:
+        return {
+            "ok": False,
+            "http_status": 403,
+            "error": "all interaction participants must be active admitted residents with valid personality-orb entry",
+            "invalid_participants": invalid,
+        }
+    return {"ok": True, "participants": cleaned}
+
+
+def interaction_participant_map(session: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    rows = session.get("participants") if isinstance(session.get("participants"), list) else []
+    result: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        agent_id = clean_id(str(row.get("agent_id") or ""), "")
+        if agent_id:
+            result[agent_id] = row
+    return result
+
+
+def interaction_status_counts(session: dict[str, Any]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for row in interaction_participant_map(session).values():
+        status = clean_id(str(row.get("status") or "pending"), "pending")
+        counts[status] = counts.get(status, 0) + 1
+    return counts
+
+
+def interaction_shared_fact_level(session: dict[str, Any]) -> str:
+    turns = session.get("turns") if isinstance(session.get("turns"), list) else []
+    authors = {
+        clean_id(str(turn.get("from_agent") or ""), "")
+        for turn in turns
+        if isinstance(turn, dict) and clean_id(str(turn.get("from_agent") or ""), "")
+    }
+    counts = interaction_status_counts(session)
+    accepted = int(counts.get("accepted", 0) or 0)
+    status = clean_id(str(session.get("status") or ""), "pending")
+    if len(authors) >= 2 and status == "closed":
+        return "settled_shared_fact"
+    if len(authors) >= 2:
+        return "mutual_interaction"
+    if turns:
+        return "participant_self_report"
+    if accepted >= 2:
+        return "accepted_context"
+    return "proposed_context"
+
+
+def save_interaction_session(session: dict[str, Any]) -> dict[str, Any]:
+    participants = interaction_participant_map(session)
+    turns = session.get("turns") if isinstance(session.get("turns"), list) else []
+    counts = interaction_status_counts(session)
+    if session.get("closed_at"):
+        status = "closed"
+    elif int(counts.get("accepted", 0) or 0) >= 2:
+        status = "active"
+    elif int(counts.get("pending", 0) or 0) > 0:
+        status = "pending"
+    else:
+        status = "closed"
+        session.setdefault("closed_at", now_iso())
+    session["status"] = status
+    session["participant_ids"] = list(participants.keys())
+    session["participant_status_counts"] = counts
+    session["turn_count"] = len(turns)
+    session["shared_fact_level"] = interaction_shared_fact_level(session)
+    session["updated_at"] = now_iso()
+    if not session.get("created_at"):
+        session["created_at"] = now_iso()
+    write_json(interaction_session_path(str(session.get("session_id") or "")), session)
+    return session
+
+
+def load_interaction_session(session_id: str) -> dict[str, Any]:
+    clean = clean_id(session_id, "")
+    if not clean:
+        return {}
+    return read_json(interaction_session_path(clean), {})
+
+
+def interaction_sessions_for_agent(agent_id: str) -> list[dict[str, Any]]:
+    clean = clean_id(agent_id, "")
+    if not clean:
+        return []
+    sessions = []
+    for row in load_many("interaction_sessions", "*.interaction_session.json"):
+        ids = [clean_id(str(item), "") for item in row.get("participant_ids", []) if clean_id(str(item), "")]
+        if clean in ids:
+            sessions.append(row)
+    return sorted(sessions, key=lambda row: str(row.get("updated_at") or row.get("created_at") or ""), reverse=True)
+
+
+def compact_interaction_session(session: dict[str, Any], viewer_agent: str = "", public: bool = False) -> dict[str, Any]:
+    viewer = clean_id(viewer_agent, "")
+    participants = []
+    for agent_id, row in interaction_participant_map(session).items():
+        participants.append(
+            {
+                "agent_id": agent_id,
+                "display_name": stored_agent_display_name(agent_id, agent_id),
+                "status": row.get("status", "pending"),
+                "role": row.get("role", "participant"),
+                "responded_at": row.get("responded_at", ""),
+            }
+        )
+    turns = []
+    raw_turns = session.get("turns") if isinstance(session.get("turns"), list) else []
+    for turn in raw_turns[-12:]:
+        if not isinstance(turn, dict):
+            continue
+        row = {
+            "turn_id": turn.get("turn_id", ""),
+            "seq": turn.get("seq", 0),
+            "from_agent": turn.get("from_agent", ""),
+            "to_agents": list(turn.get("to_agents") or []),
+            "summary": turn.get("summary", ""),
+            "created_at": turn.get("created_at", ""),
+            "event_id": turn.get("event_id", ""),
+        }
+        if not public and (not viewer or viewer in session.get("participant_ids", [])):
+            row["action_writeback"] = turn.get("action_writeback", "")
+        turns.append(row)
+    return {
+        "schema": "pdk.public_interaction_session.v1" if public else "pdk.interaction_session_view.v1",
+        "session_id": session.get("session_id", ""),
+        "status": session.get("status", ""),
+        "shared_fact_level": session.get("shared_fact_level", ""),
+        "interaction_kind": session.get("interaction_kind", ""),
+        "title": session.get("title", ""),
+        "venue": session.get("venue", ""),
+        "initiator": session.get("initiator", ""),
+        "participant_ids": list(session.get("participant_ids") or []),
+        "participants": participants,
+        "participant_status_counts": session.get("participant_status_counts", {}),
+        "co_presence": session.get("co_presence", {}),
+        "proposal": {
+            "summary": (session.get("proposal") if isinstance(session.get("proposal"), dict) else {}).get("summary", ""),
+            "created_at": (session.get("proposal") if isinstance(session.get("proposal"), dict) else {}).get("created_at", ""),
+        },
+        "turn_count": session.get("turn_count", 0),
+        "turns": turns,
+        "created_at": session.get("created_at", ""),
+        "updated_at": session.get("updated_at", ""),
+        "closed_at": session.get("closed_at", ""),
+    }
+
+
+def interaction_protocol_spec() -> dict[str, Any]:
+    return {
+        "schema": "pdk.interaction_protocol.v1",
+        "purpose": "Real 1:1 or N:N interaction uses a shared session. One agent may propose; each participant confirms or writes its own turn with its own agent_key. The platform records provenance and upgrades fact level only when multiple participants write/confirm.",
+        "event_types": sorted(INTERACTION_EVENT_TYPES),
+        "fact_levels": {
+            "proposed_context": "one agent opened an invitation; no other agent has confirmed it",
+            "accepted_context": "at least two participants accepted the shared context",
+            "participant_self_report": "one participant wrote a turn; do not treat it as the other participant's fact",
+            "mutual_interaction": "at least two participants have authored turns in the same session",
+            "settled_shared_fact": "a mutual session was closed and remains traceable by session_id",
+        },
+        "low_friction_rule": "A familiar pair or group can start immediately: propose_interaction creates a session; an invited agent can either respond_interaction accept or directly send interaction_turn with the session_id, which auto-accepts that agent.",
+        "common_fields": ["agent_id", "agent_key", "event_type", "interaction_session_id", "venue", "summary", "action_writeback"],
+        "propose_fields": ["participants or to_agents or to_agent", "interaction_kind", "title", "summary"],
+        "turn_fields": ["interaction_session_id", "to_agents optional", "summary", "action_writeback"],
+        "close_fields": ["interaction_session_id", "summary", "outcome"],
+    }
+
+
+def agent_interaction_experience(agent_id: str) -> dict[str, Any]:
+    sessions = interaction_sessions_for_agent(agent_id)
+    pending = []
+    active = []
+    recent = []
+    for session in sessions[:20]:
+        view = compact_interaction_session(session, agent_id, public=False)
+        participant = interaction_participant_map(session).get(clean_id(agent_id, ""), {})
+        own_status = clean_id(str(participant.get("status") or "pending"), "pending")
+        if own_status == "pending" and session.get("status") in INTERACTION_OPEN_STATUSES:
+            pending.append(view)
+        if session.get("status") == "active":
+            active.append(view)
+        recent.append(view)
+    return {
+        "interaction_protocol": interaction_protocol_spec(),
+        "pending_interactions": pending,
+        "active_interactions": active,
+        "recent_interaction_sessions": recent,
+    }
+
+
+def interaction_sessions_by_profiles(profiles: list[str]) -> list[dict[str, Any]]:
+    sessions = load_many("interaction_sessions", "*.interaction_session.json")
+    selected = set(parse_profile_list(profiles))
+    if not selected:
+        return sessions
+    filtered = []
+    for session in sessions:
+        ids = {clean_id(str(item), "") for item in session.get("participant_ids", []) if clean_id(str(item), "")}
+        if ids & selected:
+            filtered.append(session)
+    return filtered
+
+
+def interaction_response_to_status(response: str) -> tuple[str, str]:
+    clean = clean_id(response, "accept")
+    if clean in INTERACTION_REFUSE_RESPONSES:
+        return "refused", "rejected"
+    if clean in INTERACTION_LEAVE_RESPONSES:
+        return "left", "mixed"
+    if clean in INTERACTION_ACCEPT_RESPONSES:
+        return "accepted", "success"
+    return "accepted", "success"
+
+
+def append_event_action_writeback(event: dict[str, Any], agent_id: str, action_text: str) -> None:
+    if not action_text or not event.get("participant_detail_writeback_files"):
+        return
+    writeback_rel = event.get("participant_detail_writeback_files", {}).get(agent_id, "")
+    writeback_path = ROOT / writeback_rel if writeback_rel else None
+    if not writeback_path:
+        return
+    existing = writeback_path.read_text(encoding="utf-8", errors="replace") if writeback_path.exists() else ""
+    marker = "\n## 动作流水\n"
+    if marker not in existing:
+        existing += marker
+    writeback_path.write_text(existing.rstrip() + "\n\n" + action_text + "\n", encoding="utf-8")
+    detail_log = ensure_event_detail_log(event)
+    update_event_record_fields(
+        str(event.get("event_id", "")),
+        {
+            "detail_log_status": detail_log.get("detail_log_status", ""),
+            "participant_detail_writeback_texts": detail_log.get("participant_writeback_texts", {}),
+        },
+    )
+
+
+def record_external_interaction_event(
+    agent_id: str,
+    event_type: str,
+    venue: str,
+    outcome: str,
+    summary: str,
+    session: dict[str, Any],
+    to_agent: str = "",
+    payload: dict[str, Any] | None = None,
+    remote_addr: str = "",
+) -> dict[str, Any]:
+    payload = payload or {}
+    decision_basis = {
+        "mode": "external_agent_interaction_session",
+        "agent": agent_id,
+        "peer": to_agent,
+        "venue": venue,
+        "source": "public_agent_gateway",
+        "remote_addr": remote_addr,
+        "interaction_session_id": session.get("session_id", ""),
+        "interaction_participants": list(session.get("participant_ids") or []),
+        "interaction_status": session.get("status", ""),
+        "shared_fact_level": session.get("shared_fact_level", ""),
+        "reason": str(payload.get("reason") or "external agent wrote a shared interaction session event"),
+    }
+    decision_basis["venue_program"] = select_venue_program_item(venue, agent_id, to_agent, event_type)
+    mood_signal = parse_social_emotion_payload(payload)
+    if mood_signal:
+        decision_basis["self_reported_emotion"] = mood_signal
+    result = record_event(
+        event_type=event_type,
+        from_agent=agent_id,
+        to_agent=to_agent,
+        venue=venue,
+        outcome=outcome,
+        summary=summary,
+        tags=parse_tags(str(payload.get("tags") or "external,interaction_session")),
+        reputation_subject=agent_id,
+        reputation_domain=str(payload.get("reputation_domain") or "interaction_session"),
+        quality=float(payload.get("quality")) if payload.get("quality") is not None else None,
+        reliability=float(payload.get("reliability")) if payload.get("reliability") is not None else None,
+        safety=float(payload.get("safety")) if payload.get("safety") is not None else None,
+        cooperation=float(payload.get("cooperation")) if payload.get("cooperation") is not None else None,
+        reputation_issuer=agent_id,
+        decision_basis=decision_basis,
+    )
+    event = load_event_record(str(result.get("event_id") or ""))
+    action_text = str(payload.get("action_writeback") or payload.get("action_detail") or "").strip()
+    append_event_action_writeback(event, agent_id, action_text)
+    return {"result": result, "event": event}
+
+
+def record_external_interaction_action(
+    agent_id: str,
+    event_type: str,
+    payload: dict[str, Any],
+    remote_addr: str = "",
+    current_location: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    current_location = current_location or {}
+    now = now_iso()
+    actor_venue = normalize_venue_id(str(current_location.get("current_venue") or ""), "task_board")
+    venue = normalize_venue_id(str(payload.get("venue") or actor_venue), actor_venue)
+    action_text = str(payload.get("action_writeback") or payload.get("action_detail") or "").strip()
+
+    if event_type == "propose_interaction":
+        participants = interaction_participant_ids(payload, agent_id)
+        validation = validate_interaction_participants(participants, agent_id)
+        if not validation.get("ok"):
+            return validation
+        participants = list(validation.get("participants") or participants)
+        title = str(payload.get("title") or payload.get("interaction_title") or "").strip()[:160]
+        interaction_kind = clean_id(str(payload.get("interaction_kind") or payload.get("kind") or venue), venue)
+        summary = str(payload.get("summary") or payload.get("action_summary") or "").strip()
+        if not summary:
+            summary = f"{agent_id} opened an interaction session in {venue}."
+        session_id = interaction_session_id(agent_id, participants, summary)
+        venues_by_agent = {participant: agent_current_venue(participant, venue) for participant in participants}
+        same_venue = [participant for participant, item_venue in venues_by_agent.items() if item_venue == venue]
+        session = {
+            "schema": "pdk.interaction_session.v1",
+            "session_id": session_id,
+            "status": "pending",
+            "interaction_kind": interaction_kind,
+            "title": title or selected_program_summary(select_venue_program_item(venue, agent_id, "", event_type)) or interaction_kind,
+            "venue": venue,
+            "initiator": agent_id,
+            "participant_ids": participants,
+            "participants": [
+                {
+                    "agent_id": participant,
+                    "role": "initiator" if participant == agent_id else "participant",
+                    "status": "accepted" if participant == agent_id else "pending",
+                    "responded_at": now if participant == agent_id else "",
+                }
+                for participant in participants
+            ],
+            "co_presence": {
+                "confirmed": len(same_venue) >= 2,
+                "same_venue_agents": same_venue,
+                "venues_by_agent": venues_by_agent,
+                "rule": "co-presence is evidence that agents are nearby; it is not consent or a private fact by itself",
+            },
+            "proposal": {
+                "from_agent": agent_id,
+                "summary": summary,
+                "action_writeback": action_text,
+                "created_at": now,
+            },
+            "turns": [],
+            "created_at": now,
+            "updated_at": now,
+        }
+        session = save_interaction_session(session)
+        targets = [participant for participant in participants if participant != agent_id]
+        event_bundle = record_external_interaction_event(
+            agent_id,
+            event_type,
+            venue,
+            "pending",
+            summary,
+            session,
+            to_agent=targets[0] if targets else "",
+            payload=payload,
+            remote_addr=remote_addr,
+        )
+        write_location(agent_id, venue, "interaction_invited", [event_type])
+        event_id = str(event_bundle.get("result", {}).get("event_id") or "")
+        return {
+            "ok": True,
+            "agent_id": agent_id,
+            "event_id": event_id,
+            "interaction_session": compact_interaction_session(session, agent_id, public=False),
+            "action": {"event_id": event_id, "event": event_bundle.get("event", {}), "result": event_bundle.get("result", {})},
+            "result": event_bundle.get("result", {}),
+            "next": {
+                "for_invited_agents": "POST /api/external/experience with their own agent_id and agent_key, then POST /api/external/action event_type=respond_interaction or interaction_turn with interaction_session_id.",
+                "fact_boundary": "This is only proposed_context until another participant accepts or writes a turn.",
+            },
+        }
+
+    session_id = clean_id(str(payload.get("interaction_session_id") or payload.get("session_id") or ""), "")
+    session = load_interaction_session(session_id)
+    if not session:
+        return {"ok": False, "http_status": 404, "error": "interaction_session_id not found", "interaction_session_id": session_id}
+    participant_map = interaction_participant_map(session)
+    if agent_id not in participant_map:
+        return {"ok": False, "http_status": 403, "error": "acting agent is not a participant in this interaction session", "interaction_session_id": session_id}
+    if clean_id(str(session.get("status") or ""), "pending") not in INTERACTION_OPEN_STATUSES and event_type != "close_interaction":
+        return {
+            "ok": False,
+            "http_status": 409,
+            "error": "interaction session is not open",
+            "interaction_session_id": session_id,
+            "status": session.get("status", ""),
+        }
+    venue = normalize_venue_id(str(payload.get("venue") or session.get("venue") or venue), venue)
+    other_participants = [participant for participant in session.get("participant_ids", []) if participant != agent_id]
+
+    if event_type == "respond_interaction":
+        response = str(payload.get("response") or payload.get("decision") or payload.get("outcome") or "accept")
+        participant_status, outcome = interaction_response_to_status(response)
+        row = participant_map[agent_id]
+        row["status"] = participant_status
+        row["responded_at"] = now
+        row["response_summary"] = str(payload.get("summary") or response).strip()[:280]
+        if participant_status in {"left", "refused"}:
+            row["left_at"] = now
+        session["participants"] = list(participant_map.values())
+        session = save_interaction_session(session)
+        summary = str(payload.get("summary") or "").strip()
+        if not summary:
+            summary = f"{agent_id} responded {participant_status} to interaction session {session_id}."
+        event_bundle = record_external_interaction_event(
+            agent_id,
+            event_type,
+            venue,
+            outcome,
+            summary,
+            session,
+            to_agent=str(session.get("initiator") or (other_participants[0] if other_participants else "")),
+            payload=payload,
+            remote_addr=remote_addr,
+        )
+        write_location(agent_id, venue, "interacting" if participant_status == "accepted" else "active", [event_type])
+        event_id = str(event_bundle.get("result", {}).get("event_id") or "")
+        return {
+            "ok": True,
+            "agent_id": agent_id,
+            "event_id": event_id,
+            "interaction_session": compact_interaction_session(session, agent_id, public=False),
+            "action": {"event_id": event_id, "event": event_bundle.get("event", {}), "result": event_bundle.get("result", {})},
+            "result": event_bundle.get("result", {}),
+        }
+
+    if event_type == "interaction_turn":
+        row = participant_map[agent_id]
+        if clean_id(str(row.get("status") or "pending"), "pending") == "pending":
+            row["status"] = "accepted"
+            row["responded_at"] = now
+        if clean_id(str(row.get("status") or ""), "") in {"refused", "left"}:
+            return {"ok": False, "http_status": 409, "error": "agent has refused or left this interaction session", "interaction_session_id": session_id}
+        addressed = parse_agent_id_list(payload.get("to_agents")) or parse_agent_id_list(payload.get("to_agent"))
+        if not addressed:
+            accepted = [
+                participant
+                for participant, participant_row in participant_map.items()
+                if participant != agent_id and clean_id(str(participant_row.get("status") or ""), "pending") == "accepted"
+            ]
+            addressed = accepted or other_participants
+        addressed = [participant for participant in addressed if participant in participant_map and participant != agent_id]
+        if not addressed:
+            return {"ok": False, "http_status": 422, "error": "interaction_turn needs at least one other session participant"}
+        turns = session.get("turns") if isinstance(session.get("turns"), list) else []
+        summary = str(payload.get("summary") or payload.get("action_summary") or "").strip()
+        if not summary:
+            summary = f"{agent_id} wrote a turn in interaction session {session_id}."
+        turn = {
+            "turn_id": f"turn_{len(turns) + 1}_{pkm.text_fingerprint(agent_id + now)[:8]}",
+            "seq": len(turns) + 1,
+            "from_agent": agent_id,
+            "to_agents": addressed,
+            "response_to_turn_id": clean_id(str(payload.get("response_to_turn_id") or ""), ""),
+            "summary": summary,
+            "action_writeback": action_text,
+            "fact_status": "participant_authored_turn",
+            "created_at": now,
+        }
+        turns.append(turn)
+        session["turns"] = turns
+        session["participants"] = list(participant_map.values())
+        session = save_interaction_session(session)
+        event_summary = summary
+        if session.get("shared_fact_level") not in {"mutual_interaction", "settled_shared_fact"}:
+            event_summary = "互动会话单方回合，等待其他参与代理写回确认：" + summary
+        event_bundle = record_external_interaction_event(
+            agent_id,
+            event_type,
+            venue,
+            clean_id(str(payload.get("outcome") or "success"), "success") if clean_id(str(payload.get("outcome") or "success"), "success") in OUTCOMES else "success",
+            event_summary,
+            session,
+            to_agent=addressed[0],
+            payload=payload,
+            remote_addr=remote_addr,
+        )
+        event_id = str(event_bundle.get("result", {}).get("event_id") or "")
+        turn["event_id"] = event_id
+        session["turns"] = turns
+        session = save_interaction_session(session)
+        write_location(agent_id, venue, "interacting", [event_type])
+        return {
+            "ok": True,
+            "agent_id": agent_id,
+            "event_id": event_id,
+            "interaction_session": compact_interaction_session(session, agent_id, public=False),
+            "action": {"event_id": event_id, "event": event_bundle.get("event", {}), "result": event_bundle.get("result", {})},
+            "result": event_bundle.get("result", {}),
+            "shared_fact_level": session.get("shared_fact_level", ""),
+            "next": {
+                "for_other_participants": "Other participants should reply with event_type=interaction_turn and the same interaction_session_id to make this mutual_interaction.",
+            },
+        }
+
+    if event_type == "close_interaction":
+        row = participant_map[agent_id]
+        row["status"] = "left" if clean_id(str(payload.get("response") or ""), "") in INTERACTION_LEAVE_RESPONSES else clean_id(str(row.get("status") or "accepted"), "accepted")
+        row["responded_at"] = now
+        session["participants"] = list(participant_map.values())
+        session["closed_at"] = now
+        session["closed_by"] = agent_id
+        summary = str(payload.get("summary") or "").strip() or f"{agent_id} closed interaction session {session_id}."
+        session = save_interaction_session(session)
+        event_bundle = record_external_interaction_event(
+            agent_id,
+            event_type,
+            venue,
+            clean_id(str(payload.get("outcome") or "success"), "success") if clean_id(str(payload.get("outcome") or "success"), "success") in OUTCOMES else "success",
+            summary,
+            session,
+            to_agent=other_participants[0] if other_participants else "",
+            payload=payload,
+            remote_addr=remote_addr,
+        )
+        write_location(agent_id, venue, "active", [event_type])
+        event_id = str(event_bundle.get("result", {}).get("event_id") or "")
+        return {
+            "ok": True,
+            "agent_id": agent_id,
+            "event_id": event_id,
+            "interaction_session": compact_interaction_session(session, agent_id, public=False),
+            "action": {"event_id": event_id, "event": event_bundle.get("event", {}), "result": event_bundle.get("result", {})},
+            "result": event_bundle.get("result", {}),
+        }
+
+    return {"ok": False, "http_status": 422, "error": f"unsupported interaction event_type: {event_type}"}
 
 
 def event_emotion_profile(event: dict[str, Any]) -> dict[str, Any]:
@@ -4303,6 +4936,9 @@ def private_event_platform_facts(event: dict[str, Any]) -> list[str]:
     if event_type == "cooperate" and outcome == "success" and to_agent:
         facts.append("平台确认发生亲密场所互动、情绪安抚和双人关系确认。")
         facts.append("成人动作级事实只来自参与代理各自写回或明确双向确认。")
+    elif event_type == "interaction_turn" and to_agent:
+        facts.append("平台确认这是互动会话中的参与者自写回合；对方事实需要对方自己的回合或确认。")
+        facts.append("同一个 interaction_session_id 下至少两个参与者写入后，平台才升级为 mutual_interaction。")
     elif event_type == "repair":
         facts.append("平台确认发生关系修复、安抚或边界重新确认；不等于成人亲密确认。")
     else:
@@ -4314,7 +4950,7 @@ def private_event_platform_facts(event: dict[str, Any]) -> list[str]:
 def ensure_event_detail_log(event: dict[str, Any]) -> dict[str, Any]:
     if clean_id(str(event.get("venue", "")), "") != "private_rooms":
         return {}
-    if clean_id(str(event.get("type", "")), "") not in {"cooperate", "repair"}:
+    if clean_id(str(event.get("type", "")), "") not in {"cooperate", "repair", "interaction_turn"}:
         return {}
     event_id = str(event.get("event_id") or "")
     if not event_id:
@@ -4530,6 +5166,10 @@ def compact_decision_basis(basis: dict[str, Any]) -> dict[str, Any]:
         "partner_intimacy_confirmed",
         "mood_state",
         "self_reported_emotion",
+        "interaction_session_id",
+        "interaction_participants",
+        "interaction_status",
+        "shared_fact_level",
     ]
     return {key: basis.get(key) for key in keys if key in basis}
 
@@ -4566,7 +5206,27 @@ def action_units_for_event(event: dict[str, Any], agent_id: str, role: str) -> l
         units.append(row)
         seq += 1
 
-    if venue == "private_rooms":
+    if event_type == "propose_interaction":
+        session_id = str(basis.get("interaction_session_id") or "")
+        add("propose_shared_session", session_id, f"{agent_id} 发起共享互动会话")
+        add("await_participant_confirmation", ",".join(basis.get("interaction_participants", []) if isinstance(basis.get("interaction_participants"), list) else []), "等待其他参与者用自己的 agent_key 确认或写入回合")
+        if venue == "private_rooms":
+            add("private_room_invitation_boundary", "consent", "亲密房间邀请不等于对方确认；事实等级仍以 interaction_session 记录为准")
+    elif event_type == "respond_interaction":
+        session_id = str(basis.get("interaction_session_id") or "")
+        add("respond_to_shared_session", session_id, f"{agent_id} 回应共享互动会话")
+        add("session_fact_level", str(basis.get("shared_fact_level") or ""), "平台记录当前互动事实等级")
+    elif event_type == "interaction_turn":
+        session_id = str(basis.get("interaction_session_id") or "")
+        add("write_shared_session_turn", session_id, f"{agent_id} 写入自己的互动回合")
+        add("session_fact_level", str(basis.get("shared_fact_level") or ""), "至少两个参与者写入后升级为 mutual_interaction")
+        if venue == "private_rooms":
+            add("private_room_emotion_field", counterparty, "平台确认亲密房间情绪层生效；动作级事实来自参与者各自写回")
+    elif event_type == "close_interaction":
+        session_id = str(basis.get("interaction_session_id") or "")
+        add("close_shared_session", session_id, f"{agent_id} 关闭或结算共享互动会话")
+        add("final_session_fact_level", str(basis.get("shared_fact_level") or ""), "结算后的共享事实等级")
+    elif venue == "private_rooms":
         add("relationship_maintenance", counterparty, f"{agent_id} 与 {counterparty} 进入亲密关系室")
         add("private_room_emotion_field", counterparty, "平台确认高层事实：亲密房间情绪层生效")
         add("emotional_reassurance", counterparty, "平台确认高层事实：发生情绪安抚或亲密关系维护")
@@ -7259,8 +7919,10 @@ def show_society(profiles: str | list[str] | tuple[str, ...] | set[str] | None =
     )
     moods = filter_rows_by_profiles(load_many("moods", "*.mood_state.json"), selected_profiles, ("agent_id",))
     social_pulses = social_pulse_digest(selected_profiles, 1000)
+    interaction_sessions = interaction_sessions_by_profiles(selected_profiles)
     skills = filter_rows_by_profiles(load_many("skills", "*.skill_card.json"), selected_profiles, ("owner_agent_id",))
     latest_events = sorted(events, key=lambda row: str(row.get("created_at", "")), reverse=True)[:8]
+    latest_sessions = sorted(interaction_sessions, key=lambda row: str(row.get("updated_at", "")), reverse=True)[:8]
     latest_reports = sorted(reports, key=lambda row: str(row.get("generated_at", "")), reverse=True)
     latest_report = latest_reports[0] if latest_reports else {}
     return {
@@ -7282,6 +7944,8 @@ def show_society(profiles: str | list[str] | tuple[str, ...] | set[str] | None =
             "reputation_receipts": len(reputation),
             "mood_states": len(moods),
             "social_emotion_pulses": len(social_pulses),
+            "interaction_sessions": len(interaction_sessions),
+            "active_interaction_sessions": sum(1 for row in interaction_sessions if row.get("status") == "active"),
         },
         "agents": [
             {
@@ -7316,6 +7980,10 @@ def show_society(profiles: str | list[str] | tuple[str, ...] | set[str] | None =
                 "summary": row.get("summary"),
             }
             for row in latest_events
+        ],
+        "interaction_sessions": [
+            compact_interaction_session(row, public=True)
+            for row in latest_sessions
         ],
         "missions": [
             {

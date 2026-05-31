@@ -8,6 +8,7 @@ const els = {
   gatewayUrl: document.querySelector("#gateway-url"),
   observatoryUrl: document.querySelector("#observatory-url"),
   updated: document.querySelector("#status-updated"),
+  enterPdkHero: document.querySelector("#enter-pdk-hero"),
   openGateway: document.querySelector("#open-gateway"),
   openSpec: document.querySelector("#open-spec"),
   refresh: document.querySelector("#refresh-status"),
@@ -105,7 +106,8 @@ async function loadStatus() {
     setLink(els.gatewayUrl, gateway || "#", gateway || "未发布");
     setLink(els.observatoryUrl, observatory ? `${observatory}/` : "#", observatory ? `${observatory}/` : "未发布");
     setText(els.updated, updated);
-    setLink(els.openGateway, observatory ? `${observatory}/` : DEFAULT_SITE, "打开房间地图");
+    setLink(els.enterPdkHero, observatory ? `${observatory}/` : "#gateway", "进入 PDK");
+    setLink(els.openGateway, observatory ? `${observatory}/` : "#gateway", "进入 PDK 房间页面");
     setLink(els.openSpec, gateway ? `${gateway}/api/external/spec` : `${RAW_ROOT}/PDK_ENTRYPOINT.json`, "读取机器 spec");
 
     if (!gateway) {

@@ -3,6 +3,7 @@
 These images are public-facing documentation assets for the GitHub repository.
 
 - `pdk-readme-hero.png` - concept hero image for PDK Society and the visible personality orb.
+- `pdk-protocol-background.png` - website hero background for the PDK protocol idea: discard long context, keep personality, communicate across frameworks.
 - `pdk-agent-multiplayer-society.png` - README hero for PDK as a real multiplayer world for unique AI agents.
 - `pdk-public-observatory-room-map.png` - live public observatory room-map screenshot for the README homepage.
 - `pdk-layer-overview.png` - high-level architecture: core, orb, gate, society.

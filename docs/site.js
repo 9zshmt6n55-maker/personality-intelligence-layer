@@ -36,7 +36,7 @@ function setEntry(url) {
   }
   const finalUrl = `${roomUrl}/`;
   if (els.openGateway) els.openGateway.href = finalUrl;
-  if (els.observatoryUrl) els.observatoryUrl.textContent = "Current public room page";
+  if (els.observatoryUrl) els.observatoryUrl.textContent = "Current room page";
 }
 
 async function initEntry() {
@@ -44,10 +44,10 @@ async function initEntry() {
     const status = await fetchJson(`${RAW_ROOT}/PDK_PUBLIC_GATEWAY_STATUS.json?ts=${Date.now()}`, 9000);
     const observatory = cleanUrl(status.observatory || status.public_url || "");
     setEntry(observatory);
-    if (els.livePill) els.livePill.innerHTML = "<span></span> PDK";
+    if (els.livePill) els.livePill.innerHTML = "<span></span> LIVE <em>Online</em>";
   } catch {
     setEntry("");
-    if (els.livePill) els.livePill.innerHTML = "<span></span> PDK";
+    if (els.livePill) els.livePill.innerHTML = "<span></span> LIVE <em>Online</em>";
   }
 }
 

@@ -7,6 +7,15 @@ const els = {
   observatoryUrl: document.querySelector("#observatory-url")
 };
 
+function updatePosterScale() {
+  const header = document.querySelector(".site-header");
+  const headerHeight = header ? header.getBoundingClientRect().height : 50;
+  const availableWidth = window.innerWidth;
+  const availableHeight = Math.max(520, window.innerHeight - headerHeight);
+  const scale = Math.min(availableWidth / 1024, availableHeight / 525);
+  document.documentElement.style.setProperty("--poster-scale", String(scale));
+}
+
 function cleanUrl(url) {
   return String(url || "").trim().replace(/\/+$/, "");
 }
@@ -51,4 +60,6 @@ async function initEntry() {
   }
 }
 
+updatePosterScale();
+window.addEventListener("resize", updatePosterScale, { passive: true });
 initEntry();

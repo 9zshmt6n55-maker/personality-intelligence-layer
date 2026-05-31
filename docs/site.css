@@ -192,29 +192,32 @@ code {
 
 .hero-stage {
   position: absolute;
-  inset: 0;
+  left: 50%;
+  top: 50%;
   z-index: 1;
   display: block;
-  height: 100%;
+  width: 1024px;
+  height: 525px;
   min-height: 0;
-  width: 100%;
   margin: 0;
   padding: 0;
+  transform: translate(-50%, -50%) scale(var(--poster-scale, 1));
+  transform-origin: center center;
 }
 
 .hero-copy-block {
   position: absolute;
-  left: clamp(2rem, 3.2vw, 2.7rem);
-  top: clamp(1.35rem, 5.5vh, 2rem);
+  left: 32px;
+  top: 26px;
   z-index: 2;
-  width: min(31vw, 320px);
-  max-width: 330px;
+  width: 320px;
+  max-width: 320px;
   transform: none;
 }
 
 .hero h1 {
   margin: 0;
-  font-size: clamp(4.65rem, 8.1vw, 6.2rem);
+  font-size: 84px;
   line-height: 0.86;
   letter-spacing: 0;
   text-shadow: 0 0 18px rgba(255, 255, 255, 0.35), 0 0 42px rgba(120, 220, 255, 0.2);
@@ -223,13 +226,13 @@ code {
 .hero-subtitle {
   margin: 0.25rem 0 0.7rem;
   color: #f1f7ff;
-  font-size: clamp(1.18rem, 1.9vw, 1.4rem);
+  font-size: 22px;
 }
 
 .hero-line {
   margin: 0;
   font-weight: 900;
-  font-size: clamp(1.42rem, 2.6vw, 1.9rem);
+  font-size: 28px;
   line-height: 1.05;
 }
 
@@ -244,14 +247,14 @@ code {
 .hero-lead {
   margin: 0.95rem 0 0;
   color: var(--text);
-  font-size: clamp(1.15rem, 2vw, 1.5rem);
+  font-size: 22px;
   font-weight: 800;
 }
 
 .hero-models {
   margin: 0.05rem 0 0.85rem;
   color: #bca7ff;
-  font-size: clamp(0.95rem, 1.55vw, 1.12rem);
+  font-size: 17px;
   font-weight: 800;
 }
 
@@ -297,10 +300,10 @@ code {
 
 .protocol-diagram {
   position: absolute;
-  left: 54.5%;
-  top: 34%;
+  left: 558px;
+  top: 178px;
   z-index: 1;
-  width: clamp(390px, 40vw, 600px);
+  width: 410px;
   min-width: 410px;
   transform: translate(-50%, -50%);
   pointer-events: none;
@@ -556,10 +559,10 @@ code {
 
 .entry-panel {
   position: absolute;
-  top: 23%;
-  right: clamp(2rem, 3.2vw, 3.8rem);
+  top: 121px;
+  right: 33px;
   z-index: 2;
-  width: clamp(13.6rem, 18vw, 17.2rem);
+  width: 218px;
   min-width: 0;
   padding: 0.68rem;
   border: 1px solid rgba(210, 235, 255, 0.28);
@@ -642,11 +645,11 @@ code {
 .principle-strip {
   position: absolute;
   left: 50%;
-  bottom: 2.05rem;
+  bottom: 33px;
   z-index: 1;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  width: calc(100% - clamp(2.4rem, 3vw, 3.4rem));
+  width: 986px;
   transform: translateX(-50%);
   border: 1px solid rgba(210, 235, 255, 0.22);
   border-radius: 8px;
@@ -953,13 +956,15 @@ code {
 
   .hero-stage {
     position: relative;
-    inset: auto;
+    left: auto;
+    top: auto;
     display: grid;
     grid-template-columns: 1fr;
     align-items: start;
     width: 100%;
     height: auto;
     padding: 4rem 1rem 2rem;
+    transform: none;
   }
 
   .hero-copy-block {

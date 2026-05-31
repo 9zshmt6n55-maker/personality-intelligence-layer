@@ -172,15 +172,15 @@ code {
   background-image: url("images/pdk-protocol-background.png");
   background-size: cover;
   background-position: center 47%;
-  filter: saturate(1.22) contrast(1.08) brightness(1.08);
+  filter: saturate(1.28) contrast(1.08) brightness(1.16);
   transform: scale(1.015);
 }
 
 .hero-shade {
   background:
-    radial-gradient(circle at 58% 42%, rgba(2, 6, 12, 0.02), rgba(2, 6, 12, 0.18) 25rem, rgba(2, 6, 12, 0.54) 48rem),
-    linear-gradient(90deg, rgba(2, 6, 12, 0.93) 0%, rgba(2, 6, 12, 0.58) 34%, rgba(2, 6, 12, 0.14) 60%, rgba(2, 6, 12, 0.7) 100%),
-    linear-gradient(0deg, rgba(2, 6, 12, 0.88) 0%, rgba(2, 6, 12, 0.04) 46%, rgba(2, 6, 12, 0.34) 100%);
+    radial-gradient(circle at 58% 42%, rgba(2, 6, 12, 0), rgba(2, 6, 12, 0.12) 25rem, rgba(2, 6, 12, 0.48) 48rem),
+    linear-gradient(90deg, rgba(2, 6, 12, 0.9) 0%, rgba(2, 6, 12, 0.5) 34%, rgba(2, 6, 12, 0.08) 60%, rgba(2, 6, 12, 0.64) 100%),
+    linear-gradient(0deg, rgba(2, 6, 12, 0.84) 0%, rgba(2, 6, 12, 0.02) 46%, rgba(2, 6, 12, 0.3) 100%);
 }
 
 .hero-stage {
@@ -290,10 +290,10 @@ code {
 
 .protocol-diagram {
   position: absolute;
-  left: 55%;
+  left: 54.5%;
   top: 34%;
   z-index: 1;
-  width: clamp(410px, 43vw, 640px);
+  width: clamp(390px, 40vw, 600px);
   min-width: 410px;
   transform: translate(-50%, -50%);
   pointer-events: none;
@@ -552,7 +552,7 @@ code {
   top: 23%;
   right: clamp(2rem, 3.2vw, 3.8rem);
   z-index: 2;
-  width: clamp(13.6rem, 18vw, 16.4rem);
+  width: clamp(13.6rem, 18vw, 17.2rem);
   min-width: 0;
   padding: 0.68rem;
   border: 1px solid rgba(210, 235, 255, 0.28);

@@ -1,5 +1,6 @@
 {
     "schema":  "pdk.public_gateway_status.v1",
+    "fixed_website":  "https://9zshmt6n55-maker.github.io/personality-intelligence-layer/",
     "public_url":  "https://generates-rob-material-explosion.trycloudflare.com",
     "observatory":  "https://generates-rob-material-explosion.trycloudflare.com/",
     "agent_observatory_url_template":  "https://generates-rob-material-explosion.trycloudflare.com/?profiles=\u003cagent_id\u003e",

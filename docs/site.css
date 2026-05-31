@@ -20,6 +20,7 @@
 
 html {
   scroll-behavior: smooth;
+  scrollbar-width: none;
 }
 
 body {
@@ -34,6 +35,12 @@ body {
   font-family: "Segoe UI", Arial, sans-serif;
   line-height: 1.5;
   letter-spacing: 0;
+  -ms-overflow-style: none;
+}
+
+body::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 
 a {

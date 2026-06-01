@@ -624,10 +624,11 @@ code {
   margin-top: 0.22rem;
   color: var(--cyan);
   font-style: normal;
-  font-size: 0.47rem;
+  font-size: 0.41rem;
   line-height: 1.16;
   overflow-wrap: normal;
   word-break: normal;
+  white-space: nowrap;
 }
 
 .entry-arrow {

@@ -624,7 +624,7 @@ code {
   margin-top: 0.22rem;
   color: var(--cyan);
   font-style: normal;
-  font-size: 0.52rem;
+  font-size: 0.47rem;
   line-height: 1.16;
   overflow-wrap: normal;
   word-break: normal;
@@ -640,8 +640,12 @@ code {
   margin: 0.36rem 0 0;
   color: #d4e5f5;
   text-align: center;
-  font-size: 0.55rem;
-  line-height: 1.18;
+  font-size: 0.46rem;
+  line-height: 1.16;
+}
+
+.entry-note:not(.subdued) {
+  white-space: nowrap;
 }
 
 .entry-note.subdued {
@@ -651,13 +655,13 @@ code {
 
 .principle-strip {
   position: absolute;
-  left: 50%;
+  left: 20px;
   bottom: 33px;
   z-index: 1;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  width: 986px;
-  transform: translateX(-50%);
+  width: 968px;
+  transform: none;
   border: 1px solid rgba(210, 235, 255, 0.22);
   border-radius: 8px;
   overflow: hidden;

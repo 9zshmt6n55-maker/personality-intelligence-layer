@@ -683,7 +683,7 @@ code {
 }
 
 .principle-strip article:first-child {
-  grid-template-columns: minmax(7.9rem, 8.55rem) minmax(0, 1fr);
+  grid-template-columns: minmax(6.8rem, 7.25rem) minmax(0, 1fr);
 }
 
 .principle-strip article:last-child {
